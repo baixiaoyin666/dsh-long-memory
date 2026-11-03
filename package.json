@@ -1,6 +1,6 @@
 {
   "name": "dsh-long-memory",
-  "version": "0.1.1",
+  "version": "0.3.0",
   "type": "module",
   "description": "Automatic long-term memory for DeepSeek Harness: distills each finished turn into global and per-workspace facts and feeds them back into later sessions.",
   "keywords": [
@@ -23,11 +23,13 @@
   },
   "exports": {
     ".": "./index.js",
+    "./client": "./client.js",
     "./locale/*.json": "./locale/*.json",
     "./icon": "./icon.svg"
   },
   "files": [
     "index.js",
+    "client.js",
     "lib/memory.js",
     "cordis.patch.yml",
     "locale/*.json",
@@ -39,6 +41,13 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings"
+      ]
     }
   }
 }

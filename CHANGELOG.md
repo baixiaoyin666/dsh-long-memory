@@ -8,6 +8,72 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ---
 
+## [0.3.0] — 2026-11-03
+
+### 新增
+
+- **日常日记**：面板新增「日记」标签，每天一篇第一人称短文，从当天的记忆自动写成，并附一条「大肥鱼」的情绪留言。
+- **习惯记录**：写日记时顺带提炼最多 2 条用户日常习惯，作为 `global` 记忆（标签 `habit`）继续参与检索与后续提炼。
+- 日记保存在 `diary.json`；面板可「重写今天」；没有模型路由或今天还没有记忆时不会写入，并给出原因。
+- 模型输出格式改为 `FISH: / HABITS: / DIARY:` 三行，避免 JSON 字符串里的换行导致解析失败；解析失败时退回散文正文 + 内置留言。
+- 日记请求的 token 上限提高到 2200，避免长文被截断。
+
+### 变更
+
+- 面板 API 路径由 `/dsh-long-memory/api` 改为 `/dsh-long-memory/data`；路由注册挂到插件 effect 上，重载时会先释放旧路由，不再出现「旧处理器一直生效」。
+- 版本号 `0.2.0` → `0.3.0`。
+
+---
+
+## [0.3.0] — 2026-11-03
+
+### Added
+
+- **Daily diary**: a new Diary tab writes one first-person entry per day from that day's memories, with a comment from the desk pet 「大肥鱼」.
+- **Habit capture**: each diary run also distils up to two daily habits into `global` memories tagged `habit`, so they keep feeding search and later distillation.
+- Entries live in `diary.json`; the panel can rewrite today's entry; when there is no model route or no memory for today, nothing is written and the reason is reported.
+- The model now answers in `FISH: / HABITS: / DIARY:` lines instead of JSON, so newlines inside the text cannot break parsing; unparseable replies fall back to the prose plus a built-in comment.
+- The diary request gets a 2200-token budget so long entries are not cut off.
+
+### Changed
+
+- The panel API moved from `/dsh-long-memory/api` to `/dsh-long-memory/data`, and the route is owned by the plugin effect, so a reload releases the previous route instead of leaving a stale handler in place.
+- Version `0.2.0` → `0.3.0`.
+
+---
+
+## [0.2.0] — 2026-11-03
+
+### 新增
+
+- **详情面板**：左侧栏新增「长期记忆」图标，点开是整页面板（设置 → 长期记忆 里也有同一页）。展示总条数、全局/工作区分布、近 7 天新增、平均长度、Top 标签，以及一个健康度评分——重复条目、超过 30 天未更新、上次提炼失败都会扣分并列出具体原因。
+- 面板内含完整记忆列表，支持关键词搜索、按范围过滤、逐条删除；每次打开或点「刷新」都读取实时数据。
+- 每条记忆可展开 **「查看对话」**：显示产生它的那一轮用户消息与助手回复全文（含会话 id、轮次、时间），以及创建/更新时间、命中次数、来源与工作区路径。提炼时把来源对话随记忆一起写入 `origins`（每条最多保留最近 5 个）。
+- 新增本地 API：`GET /dsh-long-memory/api` 返回记忆库与分析结果，`POST` 支持 `{"action":"forget","id":"…"}` 与 `{"action":"save","text":"…","scope":"global|workspace"}`。
+- 插件增加 Client 半侧（`client.js`，注册到 `sidebar.panellist` / `main` 与 `settings.section`）。
+
+### 变更
+
+- 版本号 `0.1.1` → `0.2.0`；记忆存储格式未变。
+
+---
+
+## [0.2.0] — 2026-11-03
+
+### Added
+
+- **Detail panel**: a new sidebar icon opens a full page (the same page also sits in Settings → Long-term memory): totals, global/workspace split, new rows in the last 7 days, average length, top tags, and a health score — duplicate rows, rows untouched for 30 days and a failed last distillation each cost points and are listed as concrete reasons.
+- The panel lists every memory with keyword search, scope filtering and per-row delete, reading live data on open and on refresh.
+- Every row expands into **"view conversation"**: the full user message and assistant reply of the turn it came from (session id, turn, time), plus created/updated times, hit count, source and workspace path. Distillation now records the source conversation in `origins` (the five most recent per row).
+- Local API: `GET /dsh-long-memory/api` returns the store plus its analysis; `POST` accepts `{"action":"forget","id":"…"}` and `{"action":"save","text":"…","scope":"global|workspace"}`.
+- The plugin now ships a client half (`client.js`, registered into `sidebar.panellist` / `main` and `settings.section`).
+
+### Changed
+
+- Version `0.1.1` → `0.2.0`; the storage format is unchanged.
+
+---
+
 ## [0.1.1] — 2026-11-03
 
 ### 修复

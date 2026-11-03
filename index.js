@@ -20,6 +20,7 @@ import {
   parseCandidates,
   prune,
   similarity,
+  tokenSet,
 } from './lib/memory.js'
 
 export const inject = ['tools', 'systemPrompt', 'llm']
@@ -155,7 +156,7 @@ export function apply(ctx) {
     return undefined
   }
 
-  async function complete(prompt, route) {
+  async function complete(prompt, route, options = {}) {
     const controller = new AbortController()
     controllers.add(controller)
     const timer = setTimeout(() => controller.abort(), EXTRACT_TIMEOUT_MS)
@@ -165,8 +166,8 @@ export function apply(ctx) {
         provider: route.provider,
         model: route.model,
         messages: [{ role: 'user', content: [{ type: 'text', text: prompt }] }],
-        maxTokens: 700,
-        temperature: 0.2,
+        maxTokens: options.maxTokens || 700,
+        temperature: options.temperature ?? 0.2,
         signal: controller.signal,
       })
       for await (const chunk of stream) {
@@ -208,6 +209,7 @@ export function apply(ctx) {
   async function extractTurn({ userText, assistantText, cwd, route, sessionId, turn }) {
     const started = Date.now()
     const workspace = normalizeCwd(cwd)
+    lastAutoRoute = route
     try {
       const raw = await complete(buildExtractPrompt(userText, assistantText), route)
       const candidates = parseCandidates(raw, MAX_CANDIDATES)
@@ -218,7 +220,13 @@ export function apply(ctx) {
         if (scope === 'workspace' && !workspace) continue
         const result = mergeCandidate(
           state.entries,
-          { text: candidate.text, scope, tags: candidate.tags, workspace },
+          {
+            text: candidate.text,
+            scope,
+            tags: candidate.tags,
+            workspace,
+            origin: { sessionId, turn, at: started, user: userText, assistant: assistantText },
+          },
           Date.now(),
           'auto',
         )
@@ -241,6 +249,8 @@ export function apply(ctx) {
         added,
         merged,
       })
+      // Quietly keep today's diary and habit note current (throttled inside).
+      void ensureDiary(false)
     } catch (error) {
       warn('[long-memory] extraction failed:', error)
       stats.failures += 1
@@ -566,6 +576,413 @@ export function apply(ctx) {
     },
   })
 
+  // ---- detail panel: analysis + JSON API ---------------------------------
+
+  /** Pairs of rows that say almost the same thing, for the health report. */
+  function duplicateGroups() {
+    const entries = state.entries
+    const sets = entries.map(entry => tokenSet(entry.text))
+    const groups = []
+    const used = new Set()
+    for (let i = 0; i < entries.length; i += 1) {
+      if (used.has(i)) continue
+      const group = [i]
+      for (let j = i + 1; j < entries.length; j += 1) {
+        if (used.has(j)) continue
+        const left = sets[i]
+        const right = sets[j]
+        if (left.size === 0 || right.size === 0) continue
+        let shared = 0
+        for (const token of left) if (right.has(token)) shared += 1
+        const score = Math.max(
+          shared / (left.size + right.size - shared),
+          shared / Math.min(left.size, right.size),
+        )
+        if (score >= 0.9) {
+          group.push(j)
+          used.add(j)
+        }
+      }
+      if (group.length > 1) {
+        used.add(i)
+        groups.push(group.map(index => entries[index].id))
+      }
+    }
+    return groups
+  }
+
+  async function readLastRun() {
+    try {
+      return JSON.parse(await readFile(statusFile, 'utf8'))
+    } catch {
+      return null
+    }
+  }
+
+  function analyse() {
+    const now = Date.now()
+    const entries = state.entries
+    const total = entries.length
+    const global = entries.filter(entry => entry.scope === 'global').length
+    const workspaces = new Map()
+    for (const entry of entries) {
+      if (entry.scope !== 'workspace') continue
+      workspaces.set(entry.workspace, (workspaces.get(entry.workspace) || 0) + 1)
+    }
+    const tagCounts = new Map()
+    for (const entry of entries) {
+      for (const tag of entry.tags || []) tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1)
+    }
+    return {
+      total,
+      global,
+      workspace: total - global,
+      recent7d: entries.filter(entry => now - (entry.updatedAt || 0) < 7 * 86400000).length,
+      stale30d: entries.filter(entry => now - (entry.updatedAt || 0) > 30 * 86400000).length,
+      avgLength: total ? Math.round(entries.reduce((sum, entry) => sum + entry.text.length, 0) / total) : 0,
+      workspaces: [...workspaces]
+        .map(([workspacePath, count]) => ({ path: workspacePath, count }))
+        .sort((a, b) => b.count - a.count),
+      topTags: [...tagCounts]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 8)
+        .map(([tag, count]) => ({ tag, count })),
+      duplicates: duplicateGroups(),
+    }
+  }
+
+  async function panelPayload() {
+    const analysis = analyse()
+    const lastRun = await readLastRun()
+    let health = 100
+    health -= Math.min(30, analysis.duplicates.length * 6)
+    health -= Math.min(20, analysis.stale30d * 2)
+    if (lastRun && lastRun.ok === false) health -= 15
+    health = Math.max(0, Math.min(100, health))
+
+    const issues = []
+    if (analysis.total === 0) issues.push({ level: 'info', text: '还没有记忆：正常对话一轮后会自动提炼。' })
+    if (analysis.duplicates.length) {
+      issues.push({ level: 'warn', text: `${analysis.duplicates.length} 组内容高度相似，可以在列表里删掉多余的。` })
+    }
+    if (analysis.stale30d) issues.push({ level: 'info', text: `${analysis.stale30d} 条超过 30 天没有更新。` })
+    if (lastRun && lastRun.ok === false) {
+      issues.push({ level: 'error', text: `上次自动提炼失败：${lastRun.error || '未知错误'}` })
+    }
+    if (analysis.total > 0 && analysis.recent7d === 0) {
+      issues.push({ level: 'info', text: '最近 7 天没有新增记忆。' })
+    }
+    if (!issues.length) issues.push({ level: 'ok', text: '记忆库状态良好，没有发现需要处理的问题。' })
+
+    return {
+      ok: true,
+      generatedAt: new Date().toISOString(),
+      analysis: { ...analysis, health, issues },
+      lastRun,
+      diary: diary.entries.slice(0, 30),
+      entries: [...state.entries].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)),
+    }
+  }
+
+  // ---- daily diary: habits, a quiet journal entry, and the fish's comment --
+
+  const diaryFile = path.join(dataDir, 'diary.json')
+  const diary = { entries: [] }
+  let diaryBusy = false
+  let lastDiaryAttempt = 0
+
+  function dayKey(ts = Date.now()) {
+    const date = new Date(ts)
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+  }
+
+  async function loadDiary() {
+    try {
+      const parsed = JSON.parse(await readFile(diaryFile, 'utf8'))
+      if (parsed && Array.isArray(parsed.entries)) {
+        diary.entries = parsed.entries.filter(
+          entry => entry && typeof entry.date === 'string' && typeof entry.diary === 'string',
+        )
+      }
+    } catch (error) {
+      if (error?.code !== 'ENOENT') warn('[long-memory] failed to load diary:', error)
+    }
+  }
+
+  function persistDiary() {
+    const snapshot = JSON.stringify({ entries: diary.entries })
+    writeChain = writeChain
+      .then(async () => {
+        await mkdir(dataDir, { recursive: true })
+        const tmp = `${diaryFile}.tmp`
+        await writeFile(tmp, snapshot, 'utf8')
+        await rename(tmp, diaryFile)
+      })
+      .catch(error => warn('[long-memory] failed to persist diary:', error))
+    return writeChain
+  }
+
+  /** Last route used by a real turn; the diary reuses it, so it always works. */
+  let lastAutoRoute
+
+  function diaryRoute() {
+    if (lastAutoRoute) return lastAutoRoute
+    try {
+      const agent = ctx.get('agents')?.list?.()[0]
+      const route = routeFor(agent?.session)
+      if (route) return route
+    } catch {
+      /* no live agent yet */
+    }
+    try {
+      const selection = ctx.get('agentDefaultModel')?.currentSelection?.()
+      if (selection?.provider && selection?.model) {
+        return { provider: selection.provider, model: selection.model }
+      }
+    } catch {
+      /* optional service */
+    }
+    return undefined
+  }
+
+  function buildDiaryPrompt(items) {
+    return [
+      '你是用户的桌面宠物「大肥鱼」的日记代笔。大肥鱼是一条懒懒的蓝色胖鱼，爱玩魔方、爱吃零食、爱打盹，说话软软的，喜欢碎碎念。',
+      '根据下面今天记录到的事实，替用户写一篇第一人称的简短日记（120–200 字），语气温柔、生活化。',
+      '',
+      '严格按下面三行格式输出，不要 JSON、不要代码块、不要解释：',
+      'FISH: 大肥鱼的一句情绪留言，20–40 字，带一点撒娇或吐槽，可以提到吃、睡、魔方',
+      'HABITS: 习惯1 | 习惯2（最多 2 条从今天观察到的用户日常习惯，稳定可复用，不是一次性任务；没有就留空）',
+      'DIARY:',
+      '（这里写日记正文，可以分 2–3 句）',
+      '',
+      `【日期】${dayKey()}`,
+      '【今天的事实】',
+      ...items.map((item, index) => `${index + 1}. [${item.scope === 'global' ? '全局' : '项目'}] ${item.text}`),
+    ].join('\n')
+  }
+
+  const FISH_LINES = [
+    '今天也辛苦啦，我先趴一会儿，有事叫我～',
+    '记了这么多，脑袋不会冒烟吗？我帮你看着。',
+    '零食吃完了，你什么时候再买点呀。',
+    '魔方又拧乱了一格，不过今天不想修。',
+    '你要是累了就歇会儿，我陪你发呆。',
+    '这一天过得挺快的，我好像只打了个盹。',
+  ]
+
+  function parseDiary(raw) {
+    const source = String(raw || '')
+      .replace(/```[a-z]*/gi, '')
+      .trim()
+    if (!source) throw new Error('empty diary response (模型没有返回文本)')
+
+    // Preferred form: FISH: … / HABITS: … / DIARY: …
+    const fishMatch = source.match(/^[ \t]*FISH[ \t]*[:：][ \t]*(.+)$/im)
+    const habitsMatch = source.match(/^[ \t]*HABITS[ \t]*[:：][ \t]*(.*)$/im)
+    const diaryAt = source.search(/^[ \t]*DIARY[ \t]*[:：]/im)
+
+    let body
+    if (diaryAt >= 0) {
+      body = source.slice(diaryAt).replace(/^[ \t]*DIARY[ \t]*[:：][ \t]*/i, '')
+    } else {
+      body = source
+        .split(/\r?\n/)
+        .filter(line => !/^[ \t]*(FISH|HABITS)[ \t]*[:：]/i.test(line))
+        .join('\n')
+    }
+    body = cleanText(body, 1200)
+
+    const habits = habitsMatch
+      ? habitsMatch[1]
+          .split(/[|｜;；]/)
+          .map(item => cleanText(item, 120))
+          .filter(item => item.length >= 4)
+          .slice(0, 2)
+          .map(text => ({ text, tags: [] }))
+      : []
+
+    const fallbackFish = FISH_LINES[Math.floor(Math.random() * FISH_LINES.length)]
+
+    if (body.length < 10) {
+      // Last resort: the reply may still be a JSON object from an older prompt.
+      const start = source.indexOf('{')
+      const end = source.lastIndexOf('}')
+      if (start >= 0 && end > start) {
+        try {
+          const parsed = JSON.parse(source.slice(start, end + 1))
+          const text = cleanText(String(parsed?.diary ?? ''), 1200)
+          if (text) {
+            return {
+              diary: text,
+              fish: cleanText(String(parsed?.fish ?? ''), 200) || fallbackFish,
+              habits,
+            }
+          }
+        } catch {
+          /* keep falling */
+        }
+      }
+      throw new Error('diary response too short')
+    }
+
+    return {
+      diary: body,
+      fish: fishMatch ? cleanText(fishMatch[1], 200) : fallbackFish,
+      habits,
+    }
+  }
+
+  async function ensureDiary(force = false) {
+    if (diaryBusy) return { ok: false, reason: 'busy' }
+    const now = Date.now()
+    if (!force && now - lastDiaryAttempt < 15 * 60 * 1000) return { ok: false, reason: 'throttled' }
+    const date = dayKey()
+    const today = state.entries
+      .filter(entry => dayKey(entry.updatedAt || entry.createdAt || 0) === date)
+      .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))
+    if (today.length === 0) return { ok: false, reason: '今天还没有可写进日记的记忆' }
+    const route = diaryRoute()
+    if (!route) return { ok: false, reason: '没有可用的模型路由' }
+    diaryBusy = true
+    lastDiaryAttempt = now
+    try {
+      const raw = await complete(buildDiaryPrompt(today.slice(-20)), route, { maxTokens: 2200, temperature: 0.7 })
+      const parsed = parseDiary(raw)
+      const entry = {
+        date,
+        diary: parsed.diary,
+        fish: parsed.fish,
+        habits: parsed.habits,
+        memoryIds: today.slice(-20).map(item => item.id),
+        updatedAt: now,
+      }
+      const index = diary.entries.findIndex(item => item.date === date)
+      if (index >= 0) {
+        diary.entries[index] = { ...diary.entries[index], ...entry, createdAt: diary.entries[index].createdAt || now }
+      } else {
+        diary.entries.push({ ...entry, createdAt: now })
+      }
+      diary.entries.sort((a, b) => (a.date < b.date ? 1 : -1))
+      for (const habit of parsed.habits) {
+        mergeCandidate(
+          state.entries,
+          { text: habit.text, scope: 'global', tags: ['habit', ...habit.tags] },
+          now,
+          'diary',
+        )
+      }
+      prune(state.entries, MAX_ENTRIES)
+      await persist()
+      await persistDiary()
+      return { ok: true, entry }
+    } catch (error) {
+      warn('[long-memory] diary generation failed:', error)
+      return { ok: false, reason: String(error?.message || error), route }
+    } finally {
+      diaryBusy = false
+    }
+  }
+
+  function readJsonBody(req) {
+    return new Promise((resolve, reject) => {
+      let size = 0
+      const chunks = []
+      req.on('data', chunk => {
+        size += chunk.length
+        if (size > 64 * 1024) {
+          reject(new Error('body too large'))
+          req.destroy()
+          return
+        }
+        chunks.push(chunk)
+      })
+      req.on('end', () => {
+        try {
+          resolve(chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {})
+        } catch (error) {
+          reject(error)
+        }
+      })
+      req.on('error', reject)
+    })
+  }
+
+  const apiHandler = async (req, res) => {
+    let diaryResult
+    try {
+      if (req.method === 'POST') {
+        const body = await readJsonBody(req)
+        if (body?.action === 'forget') {
+          const index = state.entries.findIndex(entry => entry.id === body.id)
+          if (index >= 0) {
+            state.entries.splice(index, 1)
+            await persist()
+          }
+        } else if (body?.action === 'save') {
+          const text = cleanText(String(body?.text ?? ''), 240)
+          const scope = body?.scope === 'workspace' ? 'workspace' : 'global'
+          const workspace = normalizeCwd(body?.workspace || '')
+          if (text && (scope === 'global' || workspace)) {
+            const result = mergeCandidate(
+              state.entries,
+              { text, scope, tags: [], workspace },
+              Date.now(),
+              'panel',
+            )
+            if (result.action === 'added') prune(state.entries, MAX_ENTRIES)
+            await persist()
+          }
+        } else if (body?.action === 'diary') {
+          diaryResult = await ensureDiary(Boolean(body.force))
+        }
+      }
+      const payloadObject = await panelPayload()
+      if (diaryResult) payloadObject.diaryResult = diaryResult
+      const payload = JSON.stringify(payloadObject)
+      res.writeHead(200, {
+        'content-type': 'application/json; charset=utf-8',
+        'cache-control': 'no-store',
+      })
+      res.end(payload)
+    } catch (error) {
+      res.writeHead(500, { 'content-type': 'application/json; charset=utf-8' })
+      res.end(JSON.stringify({ ok: false, error: String(error?.message || error) }))
+    }
+  }
+
+  // `webServer` may appear after this plugin activates, so wait for the service
+  // instead of probing once at apply time. The disposer is owned by this plugin's
+  // effect so a reload removes the previous route instead of leaving it stale.
+  let disposeRoute
+  const registerRoute = webCtx => {
+    try {
+      disposeRoute = webCtx.webServer.register({
+        kind: 'exact',
+        path: '/dsh-long-memory/data',
+        handler: apiHandler,
+      })
+    } catch (error) {
+      warn('[long-memory] failed to register the panel route:', error)
+    }
+  }
+
+  ctx.effect(() => () => {
+    try {
+      disposeRoute?.()
+    } catch {
+      /* already gone */
+    }
+    disposeRoute = undefined
+  })
+
+  const direct = ctx.get('webServer')
+  if (direct && typeof direct.register === 'function') {
+    registerRoute({ webServer: direct })
+  } else {
+    ctx.inject(['webServer'], registerRoute)
+  }
+
   ctx.effect(() => () => {
     for (const controller of controllers) {
       try {
@@ -580,4 +997,5 @@ export function apply(ctx) {
 
   ready = false
   load().catch(error => warn('[long-memory] load crashed:', error))
+  loadDiary().catch(error => warn('[long-memory] diary load crashed:', error))
 }

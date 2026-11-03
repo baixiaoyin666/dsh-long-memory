@@ -43,6 +43,12 @@
 | `memory_save` | 手动存一条稳定事实，近似重复会合并 | `text`（必填）、`scope` = `global`/`workspace`、`tags` |
 | `memory_forget` | 按 id 删除一条记忆 | `id`（必填） |
 
+**详情面板**：点左侧栏的**长期记忆**图标，打开整页面板（设置里也保留同一页）。面板读取实时记忆库并给出分析：总条数 / 全局 / 工作区 / 近 7 天新增，健康度评分（重复条目、超过 30 天未更新、上次提炼失败都会扣分并列出原因），Top 标签，上次提炼的结果与耗时，以及一份支持搜索、按范围过滤、逐条删除的完整列表。
+
+每条记忆都能展开 **「查看对话」**：显示产生它的那一轮完整用户消息与助手回复（含会话 id、轮次、时间），以及这条记忆的创建/更新时间、命中次数、来源与工作区完整路径。来源对话在提炼时随记忆一起保存，每条最多保留最近 5 个来源。
+
+**日常日记**：面板顶部有「记忆 / 日记」两个标签。日记每天一篇，自动从当天的记忆里写成第一人称短文，底部附一条「大肥鱼」的情绪留言，并记录当天观察到的用户日常习惯（习惯会作为 `global` 记忆、带 `habit` 标签继续参与后续提炼与检索）。日记存在 `diary.json`；想看最新的点「重写今天」。
+
 **记忆范围怎么选**：
 
 - 用户本人的习惯、称呼、语言、禁忌、审美偏好 → `global`，所有项目通用。
@@ -150,6 +156,12 @@ Call the tools only when you want to be explicit:
 | `memory_search` | Keyword search over memories; returns row ids | `query` (required), `scope` = `auto`/`global`/`workspace`, `limit` |
 | `memory_save` | Save one durable fact; near-duplicates merge | `text` (required), `scope` = `global`/`workspace`, `tags` |
 | `memory_forget` | Delete one row by id | `id` (required) |
+
+**Detail panel** — click the **memory** icon in the left sidebar to open a full page (the same page also sits in Settings). It reads the live store and analyses it: totals (all / global / workspace / new in 7 days), a health score (duplicate rows, rows untouched for 30 days and a failed last distillation each cost points and are listed as reasons), top tags, the last distillation's outcome and duration, and the full list with search, scope filtering and per-row delete.
+
+Every row expands into **"view conversation"**: the full user message and assistant reply of the turn it came from (with session id, turn number and time), plus the row's created/updated times, hit count, source and full workspace path. The source conversation is captured at distillation time; each row keeps its five most recent sources.
+
+**Daily diary** — the panel has two tabs, **Memory** and **Diary**. The diary writes one entry per day from that day's memories: a short first-person note, a comment from the desk pet 「大肥鱼」, and the habits observed that day (habits are stored as `global` memories tagged `habit`, so they keep feeding later distillation and search). Entries live in `diary.json`; "rewrite today" regenerates the current one.
 
 **Choosing a scope**:
 
