@@ -15,11 +15,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/baixiaoyin666/-.git"
+    "url": "git+https://github.com/baixiaoyin666/dsh-long-memory.git"
   },
-  "homepage": "https://github.com/baixiaoyin666/-#readme",
+  "homepage": "https://github.com/baixiaoyin666/dsh-long-memory#readme",
   "bugs": {
-    "url": "https://github.com/baixiaoyin666/-/issues"
+    "url": "https://github.com/baixiaoyin666/dsh-long-memory/issues"
   },
   "exports": {
     ".": "./index.js",
