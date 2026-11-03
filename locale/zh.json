@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "长期记忆",
+    "description": "每轮对话结束后自动提炼值得长期记住的用户偏好与项目事实，存入本地记忆库，并在之后的会话中自动带回来。附带 memory_search、memory_save、memory_forget 三个工具。"
+  }
+}

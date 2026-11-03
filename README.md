@@ -1,0 +1,218 @@
+# dsh-long-memory
+
+给 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的**自动长期记忆**插件：每轮对话结束后自动提炼值得跨会话记住的事实，新会话自动带回来。
+
+[English](#english) · [更新日志](CHANGELOG.md)
+
+---
+
+## 中文
+
+### 特性
+
+- **自动提炼**：每轮对话正常结束后，把这一轮的用户消息与助手最终回复交给当前会话使用的模型，要求输出不超过 3 条稳定事实。不需要手动说「记住这个」。
+- **全局 / 项目两级**：`global` 记用户身份、偏好、禁忌、语言与风格；`workspace` 记当前目录的技术栈、命令、约定、关键决定与踩过的坑，互不污染。
+- **自动去重合并**：与已有条目高度重合时合并更新时间并保留更完整的表述，而不是无限堆积；单工作区上限 500 条，超出淘汰最久未更新的。
+- **自动带回**：新会话首次组装系统提示时，注入「全局 + 当前工作区」的最近记忆摘要（≤ 1400 字）。同一会话内摘要冻结，保证系统提示不变，避免每轮打穿 prompt 缓存。
+- **三个工具**：`memory_search`、`memory_save`、`memory_forget`，覆盖自动提炼够不到的手动查询与纠错。
+- **纯本地、零依赖**：数据是一个普通 JSON 文件，不联网、不引入任何第三方 npm 包。
+
+### 环境要求
+
+- DeepSeek Harness 0.2.x（已在 `0.2.1-rc.3` 的 desktop profile 上验证）。
+- 插件只跑在 Host 侧，无 Client 代码，不需要构建。
+
+### 安装
+
+1. 把本仓库下载到本地任意目录（`git clone` 或下载 ZIP 解压）。
+2. 在 DSH 里打开 **设置 → 插件**，选择从本地目录安装，并指向该目录。
+   等价的自动化方式：调用 `plugin_manager` 的 `install_bundle`，`target` 传该目录的绝对路径。
+3. 安装返回 `application: applied` 后，在插件列表里能看到「长期记忆 / Long-term Memory」条目。
+
+插件没有配置项，装上即用。安装后无需重启；`status.json` 等诊断文件从 **0.1.1** 起才有。
+
+### 使用
+
+**自动进行**，你什么都不用做：正常对话，下一轮（或下一个会话）它就知道该记什么、该带回什么。
+
+三个工具只在需要时调用：
+
+| 工具 | 作用 | 参数 |
+| --- | --- | --- |
+| `memory_search` | 按关键词检索记忆，返回条目 id | `query`（必填）、`scope` = `auto`/`global`/`workspace`、`limit` |
+| `memory_save` | 手动存一条稳定事实，近似重复会合并 | `text`（必填）、`scope` = `global`/`workspace`、`tags` |
+| `memory_forget` | 按 id 删除一条记忆 | `id`（必填） |
+
+**记忆范围怎么选**：
+
+- 用户本人的习惯、称呼、语言、禁忌、审美偏好 → `global`，所有项目通用。
+- 只对当前目录成立的：语言版本、包管理器、构建命令、目录约定、架构决定 → `workspace`。
+
+**数据在哪**：
+
+```
+%DSH_HOME%\plugin-data\dsh-long-memory\      # Windows 默认 C:\Users\<你>\.dsh\...
+~/.dsh/plugin-data/dsh-long-memory/          # macOS / Linux
+├── memories.json    # 记忆库（可以直接用编辑器看，格式是普通 JSON）
+├── last-run.json    # 最近一次提炼的明细：新增/合并条数、耗时、错误
+└── status.json      # 本次启动以来的计数：看到的轮数、成功/失败次数、最近错误
+```
+
+`DSH_HOME` 环境变量可以覆盖根目录。删除 `memories.json` 等于清空全部记忆。
+
+**成本**：每完成一轮会多一次小请求（输入约 2k tokens，输出上限 700）；系统提示里多一段 ≤1400 字的摘要，且每个会话只计算一次，对缓存友好。
+
+**隐私**：记忆是从对话中提炼的，提炼请求发给当前会话已经在用的模型路由；记忆文件只存在本地，插件本身不上传任何东西。
+
+### 工作原理
+
+1. 监听 `session/event`：`turn/start` 开缓冲区，收集 `user/message` 与 `assistant/message` 的文本。
+2. `turn/end` 且 `reason = completed` 时，用 `session.requestHeader()` 拿到当前路由，请求模型输出 JSON：
+   `[{"scope":"global|workspace","text":"…","tags":["…"]}]`。
+   子代理会话（`header.origin = subagent`）和非正常结束的轮次直接跳过。
+   如果安装/重载发生在轮次进行中（错过了 `turn/start`），会从会话日志回放该轮内容。
+3. 解析、清洗（单条 ≤ 300 字、最多 3 条），与已有条目做包含式相似度比较：≥ 0.82 视为同一条，合并且保留更长的表述；否则新增。
+4. 新会话第一次组装系统提示时，把全局与当前工作区的记忆按更新时间排序、拼成摘要注入；同一会话内不再变化。
+5. 中文相似度用「字符 bigram + 英文单词」的集合计算，Jaccard 与包含度取较大值，所以「用户喜欢深色模式」和「用户偏好深色模式」能被判为同一条。
+
+### 卸载 / 关闭
+
+在插件管理里禁用或移除 `dsh-long-memory` 即可，记忆文件会保留；重新启用后继续使用。彻底清除请删除 `%DSH_HOME%\plugin-data\dsh-long-memory\`。
+
+### 常见问题
+
+- **新会话没看到记忆摘要**：摘要按会话冻结，先确认 `memories.json` 里确实有内容；空库不会注入任何东西。
+- **某轮之后 `last-run.json` 没更新**：该轮可能不是 `completed`（被中断、报错、超长），或来自子代理会话，这两类都会跳过。
+- **提炼失败**：看 `last-run.json` 的 `error` 或 `status.json` 的 `lastError`；常见原因是当前路由不可用。
+- **记忆太多/太杂**：用 `memory_forget` 删掉；或直接编辑 `memories.json` 后重启。自动提炼的提示词已经要求「不记临时进度和可从代码直接读到的内容」。
+
+### 开发
+
+```bash
+node --check index.js
+node tests/memory.test.mjs
+```
+
+目录：
+
+```
+index.js            # 插件本体：事件、提炼、注入、三个工具
+lib/memory.js       # 纯函数：归一化、相似度、解析、合并、裁剪、摘要
+locale/{en,zh}.json # 插件管理里显示的名称与说明
+icon.svg            # 插件图标
+cordis.patch.yml    # bundle 的 Loader 插入行
+tests/              # 无框架的 node 断言测试
+```
+
+无构建步骤、无第三方依赖；改完直接重新安装目录即可。
+
+### 许可
+
+[MIT](LICENSE)
+
+---
+
+## English
+
+Automatic **long-term memory** for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness): after each finished turn it distills the few facts worth keeping across sessions, and feeds them back into later sessions.
+
+### Features
+
+- **Automatic distillation** — when a turn completes, the user message and the assistant's final reply go to the same model route the session already uses, asking for at most three durable facts. No need to say "remember this".
+- **Global / workspace scopes** — `global` holds who the user is and how they want answers (identity, preferences, taboos, language, style); `workspace` holds this directory's stack, commands, conventions, key decisions and pitfalls. They never mix.
+- **Deduplication** — a new fact that closely restates an existing row is merged into it (timestamp refreshed, fuller wording kept) instead of piling up. At most 500 rows per store; the least recently updated are dropped first.
+- **Automatic recall** — the first time a new session assembles its system prompt, a digest (≤ 1400 chars) of global plus current-workspace memories is injected. The digest is frozen for that session, so the system prompt never changes and prompt caching keeps working.
+- **Three tools** — `memory_search`, `memory_save`, `memory_forget` for the cases automatic distillation cannot cover.
+- **Local and dependency-free** — the store is one plain JSON file; no network calls of its own, no third-party npm packages.
+
+### Requirements
+
+- DeepSeek Harness 0.2.x (verified on the desktop profile with `0.2.1-rc.3`).
+- Host-side only: no client code, no build step.
+
+### Install
+
+1. Download this repository to a local directory (`git clone`, or download the ZIP and extract).
+2. In DSH open **Settings → Plugins**, choose to install from a local directory, and point it at that folder.
+   Scripted equivalent: call `plugin_manager` with `install_bundle` and pass the folder's absolute path as `target`.
+3. Once installation reports `application: applied`, the plugin list shows **Long-term Memory / 长期记忆**.
+
+There are no settings to configure. No restart is required; diagnostic files such as `status.json` exist from **0.1.1** on.
+
+### Usage
+
+**It is automatic.** Just talk normally; the next turn or the next session knows what to remember and what to bring back.
+
+Call the tools only when you want to be explicit:
+
+| Tool | What it does | Parameters |
+| --- | --- | --- |
+| `memory_search` | Keyword search over memories; returns row ids | `query` (required), `scope` = `auto`/`global`/`workspace`, `limit` |
+| `memory_save` | Save one durable fact; near-duplicates merge | `text` (required), `scope` = `global`/`workspace`, `tags` |
+| `memory_forget` | Delete one row by id | `id` (required) |
+
+**Choosing a scope**:
+
+- User-wide habits, name, language, taboos, taste → `global`.
+- Things that only hold in this directory: language version, package manager, build commands, directory conventions, architecture decisions → `workspace`.
+
+**Where the data lives**:
+
+```
+%DSH_HOME%\plugin-data\dsh-long-memory\      # Windows, default C:\Users\<you>\.dsh\...
+~/.dsh/plugin-data/dsh-long-memory/          # macOS / Linux
+├── memories.json    # the store (plain JSON, safe to inspect and edit)
+├── last-run.json    # the latest distillation: added/merged counts, duration, error
+└── status.json      # counters since boot: turns seen, successes, failures, last error
+```
+
+The `DSH_HOME` environment variable overrides the root. Deleting `memories.json` clears all memories.
+
+**Cost** — one small extra request per completed turn (about 2k input tokens, up to 700 output), plus a ≤1400-character digest in the system prompt that is computed once per session, which keeps it cache-friendly.
+
+**Privacy** — memories are distilled from the conversation and the request goes to the model route the session already uses; the store stays on your machine and the plugin uploads nothing.
+
+### How it works
+
+1. It watches `session/event`: `turn/start` opens a buffer, which collects the text of `user/message` and `assistant/message` events.
+2. On `turn/end` with `reason = completed`, it reads the current route from `session.requestHeader()` and asks the model for JSON in the form
+   `[{"scope":"global|workspace","text":"…","tags":["…"]}]`.
+   Subagent sessions (`header.origin = subagent`) and turns that did not complete are skipped. If the plugin was installed or reloaded mid-turn (missing the `turn/start`), it replays that turn from the session log instead.
+3. Candidates are parsed, cleaned (≤ 300 chars each, at most 3) and compared with existing rows by containment similarity: ≥ 0.82 counts as the same fact and merges (keeping the longer wording); otherwise a new row is added.
+4. When a new session first assembles its system prompt, global plus current-workspace rows are sorted by recency and injected as one digest. It does not change again during that session.
+5. Similarity is computed over a token set of latin words and CJK character bigrams, taking the larger of Jaccard and containment — so "用户喜欢深色模式" and "用户偏好深色模式" are recognised as the same row.
+
+### Uninstall
+
+Disable or remove `dsh-long-memory` in the plugin manager; the memory files stay and are reused if you re-enable it. To wipe everything, delete `%DSH_HOME%\plugin-data\dsh-long-memory\`.
+
+### Troubleshooting
+
+- **No digest in a new session** — the digest is frozen per session; first check that `memories.json` actually has rows. An empty store injects nothing.
+- **`last-run.json` did not update after a turn** — that turn probably was not `completed` (interrupted, errored, max-tokens) or came from a subagent session; both are skipped by design.
+- **Distillation failed** — read `error` in `last-run.json` or `lastError` in `status.json`; the usual cause is an unavailable model route.
+- **Too many or noisy memories** — delete them with `memory_forget`, or edit `memories.json` and restart. The extraction prompt already asks the model to skip transient progress and anything obvious from the code.
+
+### Development
+
+```bash
+node --check index.js
+node tests/memory.test.mjs
+```
+
+Layout:
+
+```
+index.js            # the plugin: events, distillation, prompt digest, three tools
+lib/memory.js       # pure functions: normalisation, similarity, parsing, merge, prune, brief
+locale/{en,zh}.json # display name and description in the plugin manager
+icon.svg            # plugin icon
+cordis.patch.yml    # the bundle's Loader insert row
+tests/              # dependency-free node assertion tests
+```
+
+No build step, no third-party dependencies; reinstall the directory after editing.
+
+### License
+
+[MIT](LICENSE)

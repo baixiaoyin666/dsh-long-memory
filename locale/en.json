@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Long-term Memory",
+    "description": "After each finished turn, distills durable user preferences and project facts into a local store and feeds them back into later sessions. Adds memory_search, memory_save and memory_forget."
+  }
+}
