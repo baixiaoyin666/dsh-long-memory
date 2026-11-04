@@ -68,6 +68,7 @@ window.__ModuleLoader__.load({
     const MOTION_CSS = `
       @keyframes lm-fade-up { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: translateY(0) } }
       @keyframes lm-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(255,255,255,0) } 50% { box-shadow: 0 0 12px 2px var(--lm-accent, rgba(255,255,255,0.35)) } }
+      @keyframes lm-shimmer { 0% { transform: translateX(-120%) } 100% { transform: translateX(120%) } }
       .lm-fade { animation: lm-fade-up .3s cubic-bezier(.2,.7,.3,1) both }
       .lm-glass { transition: transform .24s cubic-bezier(.2,.7,.3,1), box-shadow .24s ease, border-color .24s ease, background .24s ease }
       .lm-glass:hover { transform: translateY(-2px) }
@@ -78,12 +79,106 @@ window.__ModuleLoader__.load({
       .lm-btn:active:not(:disabled) { transform: translateY(0) scale(.97) }
       .lm-tab { transition: transform .18s ease, border-color .18s ease, color .18s ease, box-shadow .18s ease }
       .lm-tab:hover { transform: translateY(-1px) }
+      .lm-tab-active { box-shadow: 0 8px 22px rgba(0,0,0,.20) }
       .lm-focus:focus { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--dsw-alias-brand-primary) 26%, transparent) }
       .lm-dot { animation: lm-pulse 3.6s ease-in-out infinite }
+
+      /* pointer-tracked tilt + spotlight */
+      .lm-tilt { transition: transform .18s cubic-bezier(.2,.7,.3,1); will-change: transform; transform-style: preserve-3d }
+      .lm-spot { position: relative; overflow: hidden }
+      .lm-spot::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        background: radial-gradient(240px circle at var(--mx, 50%) var(--my, 50%), rgba(255,255,255,.16), transparent 62%);
+        opacity: 0;
+        transition: opacity .28s ease;
+        pointer-events: none;
+      }
+      .lm-spot:hover::before { opacity: 1 }
+
+      /* sliding highlight under the active tab */
+      .lm-tabs { position: relative }
+      .lm-tab-indicator {
+        position: absolute;
+        bottom: -4px;
+        height: 2px;
+        border-radius: 2px;
+        background: var(--dsw-alias-brand-primary);
+        box-shadow: 0 0 12px color-mix(in srgb, var(--dsw-alias-brand-primary) 70%, transparent);
+        transition: left .26s cubic-bezier(.2,.7,.3,1), width .26s cubic-bezier(.2,.7,.3,1);
+      }
+
+      /* health ring */
+      .lm-ring circle { transition: stroke-dashoffset .7s cubic-bezier(.2,.7,.3,1), stroke .3s ease }
+
+      /* skeleton shimmer while loading */
+      .lm-skeleton { position: relative; overflow: hidden; background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 40%, transparent); border-radius: 12px }
+      .lm-skeleton::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,.14), transparent);
+        animation: lm-shimmer 1.4s ease-in-out infinite;
+      }
     `
 
     function Motion() {
       return h('style', { dangerouslySetInnerHTML: { __html: MOTION_CSS } })
+    }
+
+    /** Animate a number from 0 to its value on mount / change. */
+    function useCountUp(value) {
+      const target = Number(value) || 0
+      const [display, setDisplay] = useState(0)
+      useEffect(() => {
+        let frame
+        const start = performance.now()
+        const step = now => {
+          const t = Math.min(1, (now - start) / 550)
+          const eased = 1 - Math.pow(1 - t, 3)
+          setDisplay(Math.round(target * eased))
+          if (t < 1) frame = requestAnimationFrame(step)
+        }
+        frame = requestAnimationFrame(step)
+        return () => cancelAnimationFrame(frame)
+      }, [target])
+      return display
+    }
+
+    /** Pointer-tracked 3D tilt plus the cursor spotlight variables. */
+    function tiltProps() {
+      return {
+        onMouseMove: event => {
+          const el = event.currentTarget
+          const rect = el.getBoundingClientRect()
+          const px = (event.clientX - rect.left) / rect.width
+          const py = (event.clientY - rect.top) / rect.height
+          el.style.setProperty('--mx', `${event.clientX - rect.left}px`)
+          el.style.setProperty('--my', `${event.clientY - rect.top}px`)
+          el.style.transform = `perspective(900px) rotateX(${((0.5 - py) * 5).toFixed(2)}deg) rotateY(${((px - 0.5) * 6).toFixed(2)}deg) translateY(-2px)`
+        },
+        onMouseLeave: event => {
+          event.currentTarget.style.transform = ''
+        },
+      }
+    }
+
+    /** Buttons drift a few pixels toward the cursor. */
+    function magnetProps() {
+      return {
+        onMouseMove: event => {
+          const el = event.currentTarget
+          const rect = el.getBoundingClientRect()
+          const dx = (event.clientX - (rect.left + rect.width / 2)) / rect.width
+          const dy = (event.clientY - (rect.top + rect.height / 2)) / rect.height
+          el.style.transform = `translate(${(dx * 5).toFixed(2)}px, ${(-1 + dy * 3).toFixed(2)}px)`
+        },
+        onMouseLeave: event => {
+          event.currentTarget.style.transform = ''
+        },
+      }
     }
 
     async function readJson(response) {
@@ -137,14 +232,16 @@ window.__ModuleLoader__.load({
     }
 
     function Card(props) {
+      const shown = useCountUp(props.value)
       return h(
         'div',
         {
-          className: 'lm-glass lm-fade',
+          className: 'lm-tilt lm-spot lm-glass lm-fade',
           style: glass({ borderRadius: 14, padding: '12px 14px', minWidth: 0 }),
+          ...tiltProps(),
         },
         h('div', { style: { fontSize: 12, color: C.sub, marginBottom: 6 } }, props.label),
-        h('div', { style: { fontSize: 24, fontWeight: 600, lineHeight: 1.1, color: C.ink } }, props.value),
+        h('div', { style: { fontSize: 24, fontWeight: 600, lineHeight: 1.1, color: C.ink } }, String(shown)),
       )
     }
 
@@ -278,6 +375,7 @@ window.__ModuleLoader__.load({
             {
               type: 'button',
               className: 'lm-btn',
+              ...magnetProps(),
               onClick: load,
               disabled: busy,
               style: {
@@ -336,39 +434,57 @@ window.__ModuleLoader__.load({
               h(
                 'div',
                 {
-                  className: 'lm-glass lm-fade',
+                  className: 'lm-tilt lm-spot lm-glass lm-fade',
                   style: glass({
                     borderRadius: 14,
                     padding: '14px',
                     marginBottom: 12,
                   }),
+                  ...tiltProps(),
                 },
                 h(
                   'div',
-                  { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 } },
-                  h('div', { style: { fontSize: 13, fontWeight: 600 } }, '记忆健康度'),
-                  h('div', { style: { fontSize: 18, fontWeight: 600, color: healthColor } }, `${analysis.health}`),
-                  h('div', { style: { fontSize: 12, color: C.faint } }, '/ 100'),
+                  { style: { display: 'flex', alignItems: 'center', gap: 14, marginBottom: 10 } },
+                  h(
+                    'svg',
+                    { width: 66, height: 66, viewBox: '0 0 64 64', className: 'lm-ring', style: { flex: 'none' } },
+                    h('circle', {
+                      cx: 32,
+                      cy: 32,
+                      r: 26,
+                      fill: 'none',
+                      stroke: 'color-mix(in srgb, var(--dsw-alias-border-l1) 65%, transparent)',
+                      strokeWidth: 6,
+                    }),
+                    h('circle', {
+                      cx: 32,
+                      cy: 32,
+                      r: 26,
+                      fill: 'none',
+                      stroke: healthColor,
+                      strokeWidth: 6,
+                      strokeLinecap: 'round',
+                      strokeDasharray: `${2 * Math.PI * 26}`,
+                      strokeDashoffset: `${2 * Math.PI * 26 * (1 - analysis.health / 100)}`,
+                      transform: 'rotate(-90 32 32)',
+                    }),
+                  ),
                   h(
                     'div',
-                    { style: { marginLeft: 'auto', fontSize: 12, color: C.faint } },
-                    `平均 ${analysis.avgLength} 字 · ${analysis.stale30d} 条超过 30 天`,
+                    { style: { flex: 1, minWidth: 0 } },
+                    h(
+                      'div',
+                      { style: { display: 'flex', alignItems: 'baseline', gap: 8 } },
+                      h('div', { style: { fontSize: 13, fontWeight: 600 } }, '记忆健康度'),
+                      h('div', { style: { fontSize: 20, fontWeight: 700, color: healthColor } }, `${analysis.health}`),
+                      h('div', { style: { fontSize: 12, color: C.faint } }, '/ 100'),
+                    ),
+                    h(
+                      'div',
+                      { style: { fontSize: 12, color: C.faint, marginTop: 4 } },
+                      `平均 ${analysis.avgLength} 字 · ${analysis.stale30d} 条超过 30 天`,
+                    ),
                   ),
-                ),
-                h(
-                  'div',
-                  {
-                    style: {
-                      height: 6,
-                      borderRadius: 999,
-                      background: C.soft,
-                      overflow: 'hidden',
-                      marginBottom: 10,
-                    },
-                  },
-                  h('div', {
-                    style: { width: `${analysis.health}%`, height: '100%', background: healthColor },
-                  }),
                 ),
                 ...analysis.issues.map((issue, index) =>
                   h(
@@ -487,9 +603,10 @@ window.__ModuleLoader__.load({
                         'div',
                         {
                           key: entry.id,
-                          className: 'lm-row',
+                          className: 'lm-row lm-fade',
                           style: {
                             padding: '10px 12px',
+                            animationDelay: `${Math.min(index, 10) * 22}ms`,
                             borderTop: index === 0 ? 'none' : `1px solid ${C.line}`,
                           },
                         },
@@ -709,6 +826,7 @@ window.__ModuleLoader__.load({
             {
               type: 'button',
               className: 'lm-btn',
+              ...magnetProps(),
               disabled: busy,
               onClick: () => load(true),
               style: {
@@ -903,6 +1021,7 @@ window.__ModuleLoader__.load({
             {
               type: 'button',
               className: 'lm-btn',
+              ...magnetProps(),
               onClick: () =>
                 setEditing({ id: '', name: '', emoji: '🙂', accent: '#8b7cf6', summary: '', prompt: '' }),
               style: {
@@ -951,7 +1070,7 @@ window.__ModuleLoader__.load({
               list.map(persona =>
                 h(
                   'tr',
-                  { key: persona.id, className: 'lm-row', style: { borderTop: `1px solid ${C.line}` } },
+                  { key: persona.id, className: 'lm-row lm-fade', style: { borderTop: `1px solid ${C.line}`, animationDelay: `${Math.min(list.indexOf(persona), 10) * 22}ms` } },
                   h(
                     'td',
                     { style: cell },
@@ -1129,6 +1248,7 @@ window.__ModuleLoader__.load({
                   {
                     type: 'button',
                     className: 'lm-btn',
+                    ...magnetProps(),
                     disabled: busy,
                     onClick: async () => {
                       await send({ action: 'persona-save', persona: editing })
@@ -1170,10 +1290,10 @@ window.__ModuleLoader__.load({
         h(Motion, null),
         h(
           'div',
-          { style: { display: 'flex', gap: 6, marginBottom: 12 } },
-          h('button', { type: 'button', className: 'lm-tab', onClick: () => setTab('memory'), style: tabStyle(tab === 'memory') }, '记忆'),
-          h('button', { type: 'button', className: 'lm-tab', onClick: () => setTab('diary'), style: tabStyle(tab === 'diary') }, '日记'),
-          h('button', { type: 'button', className: 'lm-tab', onClick: () => setTab('persona'), style: tabStyle(tab === 'persona') }, '人格'),
+          { className: 'lm-tabs', style: { display: 'flex', gap: 6, marginBottom: 12 } },
+          h('button', { type: 'button', className: `lm-tab${tab === 'memory' ? ' lm-tab-active' : ''}`, onClick: () => setTab('memory'), style: tabStyle(tab === 'memory') }, '记忆'),
+          h('button', { type: 'button', className: `lm-tab${tab === 'diary' ? ' lm-tab-active' : ''}`, onClick: () => setTab('diary'), style: tabStyle(tab === 'diary') }, '日记'),
+          h('button', { type: 'button', className: `lm-tab${tab === 'persona' ? ' lm-tab-active' : ''}`, onClick: () => setTab('persona'), style: tabStyle(tab === 'persona') }, '人格'),
         ),
         tab === 'memory' ? h(Panel, { compact: false }) : null,
         tab === 'diary' ? h(DiaryView, null) : null,

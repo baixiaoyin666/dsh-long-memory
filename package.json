@@ -1,6 +1,6 @@
 {
   "name": "dsh-long-memory",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "type": "module",
   "description": "Automatic long-term memory for DeepSeek Harness: distills each finished turn into global and per-workspace facts and feeds them back into later sessions.",
   "keywords": [

@@ -8,6 +8,34 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ---
 
+## [0.7.0] — 2026-11-04
+
+### 新增
+
+- **指针跟踪光斑**：玻璃卡片悬停时出现跟随鼠标的柔光（`--mx` / `--my` + radial-gradient）。
+- **3D 倾斜**：统计卡与健康度卡片随指针做 ≤6° 的透视倾斜，移出时回弹。
+- **数字滚动**：统计卡数值 550ms 缓动累加（0 → N）。
+- **磁吸按钮**：刷新 / 重写今天 / 新建人格 / 保存并启用，按钮会向指针方向轻微偏移。
+- **环形健康度**：进度条改为 SVG 环形，`stroke-dashoffset` 700ms 过渡，颜色随分数变化。
+- **错峰入场**：记忆列表与人格表格的行依次淡入（每行延迟 22ms）。
+- **标签页激活态**：阴影加深 + 上浮，切换更明显。
+
+---
+
+## [0.7.0] — 2026-11-04
+
+### Added
+
+- **Pointer-tracked spotlight**: hovering a glass card shows a soft highlight following the cursor (`--mx` / `--my` + radial-gradient).
+- **3D tilt**: stat cards and the health card tilt up to 6° toward the pointer and spring back on leave.
+- **Number count-up**: stat values ease from 0 to their value over 550ms.
+- **Magnetic buttons**: refresh / rewrite / new persona / save drift a few pixels toward the cursor.
+- **Ring health meter**: the flat bar became an SVG ring with a 700ms `stroke-dashoffset` transition, coloured by score.
+- **Staggered entrance**: memory rows and persona rows fade in one after another (22ms each).
+- **Tab active state**: deeper shadow and a slight lift on the selected tab.
+
+---
+
 ## [0.6.0] — 2026-11-04
 
 ### 新增
