@@ -1,11 +1,6 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/baixiaoyin666/dsh-long-memory/main/icon.svg" width="132" height="132" alt="dsh-long-memory" />
-
-<h1>dsh-long-memory</h1>
-
-<p><b>DeepSeek Harness 的自动长期记忆插件</b><br />
-每轮对话结束后自动提炼记忆，新会话自动带回；带详情面板、每日日记与可切换人格。</p>
+<img src="https://raw.githubusercontent.com/baixiaoyin666/dsh-long-memory/main/assets/hero.png" width="100%" alt="dsh-long-memory" />
 
 <p>
   <img src="https://img.shields.io/badge/version-0.9.1-4aa8ff?style=flat-square" alt="version" />
