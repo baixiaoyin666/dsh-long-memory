@@ -8,6 +8,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ---
 
+## [0.10.0] — 2026-11-04
+
+### 新增
+
+- **历史会话回填**：扫描 `~/.dsh/sessions/` 下**所有工作区**的既有会话（自动解码 zstd 多帧日志），每个会话取最近 10 轮对话，一次模型调用提炼 ≤6 条事实并入记忆库，来源写入 `origins`。
+- 面板「记忆」页新增回填卡片：开始 / 取消、进度条、会话数与新增/合并/跳过/失败计数，运行中每 3 秒自动刷新。
+- 回填会跳过子代理会话、已暂停的工作区，以及没有完整对话的会话；逐条去重合并，不会覆盖现有记忆。
+
+### 变更
+
+- 回填单次请求 token 预算 2400（太小会被推理占满导致空返回）。
+- 版本号 `0.9.1` → `0.10.0`。
+
+---
+
+## [0.10.0] — 2026-11-04
+
+### Added
+
+- **History backfill**: scans every workspace's existing sessions under `~/.dsh/sessions/` (decoding multi-frame zstd logs), takes the last 10 turns of each session, and distils up to 6 facts per session in one model call, storing them with `origins`.
+- The memory tab gained a backfill card: start / cancel, a progress bar, and session / added / merged / skipped / failed counters, refreshing every 3 seconds while it runs.
+- Subagent sessions, paused workspaces and sessions without a complete turn are skipped; facts are deduplicated against the existing store.
+
+### Changed
+
+- Backfill requests get a 2400-token budget (too small a budget was fully consumed by reasoning and returned no text).
+- Version `0.9.1` → `0.10.0`.
+
+---
+
 ## [0.9.1] — 2026-11-04
 
 ### 变更

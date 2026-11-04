@@ -8,7 +8,8 @@
  * sessions. Three tools expose explicit search / save / forget.
  */
 
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
+import { zstdDecompressSync } from 'node:zlib'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import {
@@ -684,6 +685,7 @@ export function apply(ctx) {
       analysis: { ...analysis, health, issues },
       lastRun,
       diary: diary.entries.slice(0, 30),
+      backfill: { ...backfill },
       settings: { disabledWorkspaces: settings.disabledWorkspaces },
       personas: {
         activeId: personas.activeId,
@@ -1191,6 +1193,242 @@ export function apply(ctx) {
     }
   }
 
+  // ---- history backfill: distill sessions from before the plugin existed ----
+
+  const backfill = {
+    running: false,
+    startedAt: 0,
+    finishedAt: 0,
+    total: 0,
+    done: 0,
+    added: 0,
+    merged: 0,
+    skipped: 0,
+    errors: 0,
+    current: '',
+    lastError: '',
+    debug: '',
+  }
+  let backfillCancel = false
+
+  function decodeZstdFrames(buffer) {
+    const offsets = []
+    for (let i = 0; i <= buffer.length - 4; i += 1) {
+      if (buffer[i] === 0x28 && buffer[i + 1] === 0xb5 && buffer[i + 2] === 0x2f && buffer[i + 3] === 0xfd) {
+        offsets.push(i)
+      }
+    }
+    const chunks = []
+    let start = 0
+    for (let k = 0; k < offsets.length; k += 1) {
+      if (offsets[k] < start) continue
+      const end = k + 1 < offsets.length ? offsets[k + 1] : buffer.length
+      try {
+        chunks.push(zstdDecompressSync(buffer.subarray(start, end)).toString('utf8'))
+        start = end
+      } catch {
+        /* false-positive magic byte pair; extend the slice on the next try */
+      }
+    }
+    return chunks.join('')
+  }
+
+  async function listSessionFiles() {
+    const root = path.join(dshHome(), 'sessions')
+    const files = []
+    let workspaces = []
+    try {
+      workspaces = await readdir(root)
+    } catch {
+      return files
+    }
+    for (const workspaceDir of workspaces) {
+      const wsPath = path.join(root, workspaceDir)
+      let sessions = []
+      try {
+        sessions = await readdir(wsPath)
+      } catch {
+        continue
+      }
+      for (const sessionDir of sessions) {
+        const dir = path.join(wsPath, sessionDir)
+        let entries = []
+        try {
+          entries = await readdir(dir)
+        } catch {
+          continue
+        }
+        for (const name of entries) {
+          if (!name.endsWith('.jsonl') && !name.endsWith('.jsonl.zstd')) continue
+          const file = path.join(dir, name)
+          try {
+            const info = await stat(file)
+            files.push({ file, sessionId: sessionDir, mtime: info.mtimeMs })
+          } catch {
+            /* skip unreadable file */
+          }
+        }
+      }
+    }
+    files.sort((a, b) => b.mtime - a.mtime)
+    return files
+  }
+
+  function parseSessionLog(text) {
+    let header
+    const events = []
+    for (const line of text.split('\n')) {
+      if (!line.trim()) continue
+      let parsed
+      try {
+        parsed = JSON.parse(line)
+      } catch {
+        continue
+      }
+      if (!header && parsed.type === 'session') {
+        header = parsed
+        continue
+      }
+      events.push(parsed)
+    }
+    return { header, events }
+  }
+
+  function sessionTurns(events) {
+    const turns = []
+    let current
+    for (const event of events) {
+      if (event.type === 'turn/start') {
+        current = { turn: event.data?.turn, user: [], assistant: [] }
+        continue
+      }
+      if (!current) continue
+      if (event.type === 'user/message') {
+        if (event.data?.source?.kind !== 'user') continue
+        const text = textOf(event.data?.content).trim()
+        if (text) current.user.push(text)
+      } else if (event.type === 'assistant/message') {
+        const text = textOf(event.data?.message?.content).trim()
+        if (text) current.assistant.push(text)
+      } else if (event.type === 'turn/end') {
+        if (event.data?.reason?.kind === 'completed') turns.push(current)
+        current = undefined
+      }
+    }
+    return turns
+  }
+
+  function backfillPrompt(transcript) {
+    return [
+      '你在整理用户过去的对话记录，从中提炼值得长期记住的稳定事实。',
+      '下面是同一会话里最近的若干轮对话（用户 / 助手）。',
+      '输出 JSON 数组，最多 6 条：{"scope":"global|workspace","text":"...","tags":["..."]}',
+      '规则：只记录跨会话仍有价值的事实（偏好、身份、项目约定、命令、技术决定、踩过的坑）；',
+      '忽略临时任务进度、一次性输出和寒暄；每条一句话、不超过 80 字；没有就给 []。',
+      '只输出 JSON，不要解释。',
+      '',
+      '【会话】',
+      transcript,
+    ].join('\n')
+  }
+
+  async function runBackfill(maxSessions) {
+    backfill.running = true
+    backfillCancel = false
+    Object.assign(backfill, {
+      startedAt: Date.now(),
+      finishedAt: 0,
+      total: 0,
+      done: 0,
+      added: 0,
+      merged: 0,
+      skipped: 0,
+      errors: 0,
+      current: '',
+      lastError: '',
+      debug: '',
+    })
+    try {
+      const route = diaryRoute()
+      if (!route) {
+        backfill.lastError = '没有可用的模型路由'
+        return
+      }
+      const files = await listSessionFiles()
+      const selected = files.slice(0, Math.max(1, Math.min(300, Number(maxSessions) || 40)))
+      backfill.total = selected.length
+      for (const item of selected) {
+        if (backfillCancel) break
+        backfill.current = item.sessionId.replace(/^session-/, '').slice(0, 8)
+        try {
+          const buffer = await readFile(item.file)
+          const text = item.file.endsWith('.zstd') ? decodeZstdFrames(buffer) : buffer.toString('utf8')
+          const { header, events } = parseSessionLog(text)
+          if (header?.origin === 'subagent') {
+            backfill.skipped += 1
+            continue
+          }
+          const workspace = normalizeCwd(header?.cwd || '')
+          if (!workspace || workspaceDisabled(workspace)) {
+            backfill.skipped += 1
+            continue
+          }
+          const turns = sessionTurns(events).slice(-10)
+          if (turns.length === 0) {
+            backfill.skipped += 1
+            continue
+          }
+          const transcript = turns
+            .map(turn => `用户：${clip(turn.user.join(' '), 600)}\n助手：${clip(turn.assistant.join(' '), 600)}`)
+            .join('\n\n')
+          if (transcript.length < 40) {
+            backfill.skipped += 1
+            continue
+          }
+          const raw = await complete(backfillPrompt(transcript), route, { maxTokens: 2400, temperature: 0.2 })
+          if (!raw.trim()) throw new Error('模型没有返回文本（token 预算可能被推理占满）')
+          const candidates = parseCandidates(raw, 6)
+          backfill.debug = `turns=${turns.length} transcript=${transcript.length} raw=${JSON.stringify(String(raw).slice(0, 100))}`
+          const last = turns[turns.length - 1]
+          for (const candidate of candidates) {
+            const scope = candidate.scope === 'workspace' ? 'workspace' : 'global'
+            const result = mergeCandidate(
+              state.entries,
+              {
+                text: candidate.text,
+                scope,
+                tags: candidate.tags,
+                workspace,
+                origin: {
+                  sessionId: item.sessionId,
+                  turn: last.turn,
+                  at: item.mtime,
+                  user: last.user.join(' '),
+                  assistant: last.assistant.join(' '),
+                },
+              },
+              Date.now(),
+              'backfill',
+            )
+            if (result.action === 'added') backfill.added += 1
+            else backfill.merged += 1
+          }
+          prune(state.entries, MAX_ENTRIES)
+          await persist()
+        } catch (error) {
+          backfill.errors += 1
+          backfill.lastError = String(error?.message || error).slice(0, 200)
+        } finally {
+          backfill.done += 1
+        }
+      }
+    } finally {
+      backfill.running = false
+      backfill.finishedAt = Date.now()
+      backfill.current = ''
+    }
+  }
+
   const apiHandler = async (req, res) => {
     let diaryResult
     let personaResult
@@ -1289,6 +1527,18 @@ export function apply(ctx) {
           } else {
             settingsResult = { ok: false, reason: '缺少工作区路径' }
           }
+        } else if (body?.action === 'backfill-start') {
+          if (!backfill.running) {
+            void runBackfill(Number(body.maxSessions) || 40).catch(error =>
+              warn('[long-memory] backfill crashed:', error),
+            )
+            settingsResult = { ok: true, started: true }
+          } else {
+            settingsResult = { ok: false, reason: '回填正在进行中' }
+          }
+        } else if (body?.action === 'backfill-cancel') {
+          backfillCancel = true
+          settingsResult = { ok: true }
         }
       }
       const payloadObject = await panelPayload()

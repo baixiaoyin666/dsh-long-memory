@@ -397,9 +397,30 @@ window.__ModuleLoader__.load({
         [load],
       )
 
+      const runBackfill = useCallback(
+        async action => {
+          await fetch(API, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ action, maxSessions: 40 }),
+          })
+          await load()
+        },
+        [load],
+      )
+
       const data = state.data
       const analysis = data && data.analysis
       const entries = data && data.entries ? data.entries : []
+      const backfill = (data && data.backfill) || { running: false, total: 0, done: 0 }
+
+      useEffect(() => {
+        if (!backfill.running) return undefined
+        const timer = setInterval(() => {
+          load()
+        }, 3000)
+        return () => clearInterval(timer)
+      }, [backfill.running, load])
 
       const filtered = useMemo(() => {
         const needle = query.trim().toLowerCase()
@@ -630,6 +651,75 @@ window.__ModuleLoader__.load({
                       : h('span', null, String(data.lastRun.error || '').slice(0, 120)),
                   )
                 : null,
+
+              h(
+                'div',
+                {
+                  className: 'lm-glass lm-fade',
+                  style: glass({ borderRadius: 14, padding: '12px 14px', marginBottom: 12 }),
+                },
+                h(
+                  'div',
+                  { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 } },
+                  h('div', { style: { fontSize: 12, color: C.sub } }, '历史会话回填'),
+                  h(
+                    'div',
+                    { style: { fontSize: 11, color: C.faint } },
+                    '扫描所有工作区的旧会话，提炼成记忆（只处理装插件之前的历史）',
+                  ),
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'lm-btn',
+                      ...magnetProps(),
+                      onClick: () => runBackfill(backfill.running ? 'backfill-cancel' : 'backfill-start'),
+                      style: {
+                        marginLeft: 'auto',
+                        fontSize: 11,
+                        padding: '3px 10px',
+                        borderRadius: 8,
+                        border: `1px solid ${backfill.running ? C.err : C.brand}`,
+                        color: backfill.running ? C.err : C.brand,
+                        background: 'transparent',
+                        cursor: 'pointer',
+                        flex: 'none',
+                      },
+                    },
+                    backfill.running ? '取消' : '开始回填',
+                  ),
+                ),
+                backfill.running || backfill.total
+                  ? h(
+                      'div',
+                      null,
+                      h(
+                        'div',
+                        {
+                          style: {
+                            height: 6,
+                            borderRadius: 999,
+                            background: C.soft,
+                            overflow: 'hidden',
+                            marginBottom: 6,
+                          },
+                        },
+                        h('div', {
+                          style: {
+                            width: `${backfill.total ? Math.round((backfill.done / backfill.total) * 100) : 0}%`,
+                            height: '100%',
+                            background: C.brand,
+                          },
+                        }),
+                      ),
+                      h(
+                        'div',
+                        { style: { fontSize: 11, color: C.faint } },
+                        `会话 ${backfill.done || 0}/${backfill.total || 0} · 新增 ${backfill.added || 0} · 合并 ${backfill.merged || 0} · 跳过 ${backfill.skipped || 0}${backfill.errors ? ` · 失败 ${backfill.errors}` : ''}${backfill.current ? ` · ${backfill.current}` : ''}${backfill.lastError ? ` · ${backfill.lastError}` : ''}`,
+                      ),
+                    )
+                  : null,
+              ),
 
               analysis.workspaces.length
                 ? h(
