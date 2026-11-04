@@ -877,6 +877,20 @@ export function apply(ctx) {
     return [...BUILTIN_PERSONAS, ...personas.custom]
   }
 
+  const MOOD_KEYS = ['happy', 'angry', 'sad', 'shy', 'confused', 'daily']
+
+  /** Per-persona mood faces; empty entries fall back to the built-in set. */
+  function sanitizeMoods(input) {
+    const moods = {}
+    for (const key of MOOD_KEYS) {
+      const value = String(input?.[key] ?? '')
+        .trim()
+        .slice(0, 4)
+      if (value) moods[key] = value
+    }
+    return moods
+  }
+
   function activePersona() {
     return personaList().find(item => item.id === personas.activeId) || BUILTIN_PERSONAS[0]
   }
@@ -894,6 +908,8 @@ export function apply(ctx) {
             accent: /^#[0-9a-f]{6}$/i.test(String(item.accent || '')) ? item.accent : '#8b7cf6',
             summary: String(item.summary || '').slice(0, 120),
             prompt: String(item.prompt || '').slice(0, 600),
+            moods: sanitizeMoods(item.moods),
+            cardCaption: String(item.cardCaption || '').slice(0, 60),
             builtin: false,
             createdAt: Number(item.createdAt) || Date.now(),
           }))
@@ -924,11 +940,13 @@ export function apply(ctx) {
     const emoji = String(input?.emoji || '🙂').slice(0, 4)
     const summary = cleanText(String(input?.summary ?? ''), 120)
     const accent = /^#[0-9a-f]{6}$/i.test(String(input?.accent || '')) ? input.accent : '#8b7cf6'
+    const moods = sanitizeMoods(input?.moods)
+    const cardCaption = cleanText(String(input?.cardCaption ?? ''), 60)
     const id = String(input?.id || '')
     if (id) {
       const existing = personas.custom.find(item => item.id === id)
       if (!existing) return { ok: false, reason: '内置人格不能修改，可复制后再改' }
-      Object.assign(existing, { name, prompt, emoji, summary, accent })
+      Object.assign(existing, { name, prompt, emoji, summary, accent, moods, cardCaption })
       personas.activeId = id
     } else {
       const created = {
@@ -938,6 +956,8 @@ export function apply(ctx) {
         accent,
         summary,
         prompt,
+        moods,
+        cardCaption,
         builtin: false,
         createdAt: Date.now(),
       }

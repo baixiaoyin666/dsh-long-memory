@@ -8,6 +8,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ---
 
+## [0.13.0] — 2026-11-04
+
+### 新增
+
+- **情绪卡自定义**：每个自定义人格可分别设置 6 种心情（开心 / 生气 / 难过 / 害羞 / 困惑 / 日常）的 emoji，以及文案模板（支持 `{name}`、`{mood}` 占位）；情绪卡的配色改用该人格的强调色。
+- **人格编辑更清楚**：头像 emoji 与强调色不再是无标签的输入框，新增 8 个预设头像（🐟 😼 🍵 🤖 🧘 🦊 🐧 🎩）一键填入。
+- 日记渲染时按 `personaId` 找人格的 `moods` / `cardCaption` / `accent`，未设置的项回退内置表情与默认文案，旧日记不受影响。
+
+### 变更
+
+- 人格记录新增 `moods`、`cardCaption` 字段（`personas.json` 自动兼容旧数据）。
+- 版本号 `0.12.0` → `0.13.0`。
+
+---
+
+## [0.13.0] — 2026-11-04
+
+### Added
+
+- **Mood-card customization**: each custom persona can set an emoji for all six moods (happy / angry / sad / shy / confused / daily) plus a caption template with `{name}` and `{mood}` placeholders; the card takes its tint from the persona accent.
+- **Clearer persona editor**: the avatar emoji and accent colour are no longer unlabelled inputs, and eight preset avatars (🐟 😼 🍵 🤖 🧘 🦊 🐧 🎩) fill in with one click.
+- Diary rendering resolves each entry's persona by `personaId` and falls back to the built-in faces and caption when nothing is set, so older entries are unaffected.
+
+### Changed
+
+- Personas gained `moods` and `cardCaption` fields (`personas.json` stays backward compatible).
+- Version `0.12.0` → `0.13.0`.
+
+---
+
 ## [0.12.0] — 2026-11-04
 
 ### 新增

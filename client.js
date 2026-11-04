@@ -41,6 +41,7 @@ window.__ModuleLoader__.load({
     const MOOD_LABEL = { happy: '开心', angry: '生气', sad: '难过', shy: '害羞', confused: '困惑', daily: '日常' }
     const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
     const MOOD_DAYS = 14
+    const MOOD_KEYS = ['happy', 'angry', 'sad', 'shy', 'confused', 'daily']
 
     /** "今天 · 11月4日 周二" plus the update time, from a date key. */
     function entryDateText(dateStr, updatedAt) {
@@ -1448,6 +1449,25 @@ window.__ModuleLoader__.load({
 
       const entries = (state.data && state.data.diary) || []
 
+      const personaFor = entry =>
+        ((state.data && state.data.personas && state.data.personas.list) || []).find(item => item.id === entry.personaId) ||
+        null
+      const moodFace = entry => {
+        const persona = personaFor(entry)
+        return (persona && persona.moods && persona.moods[entry.mood]) || MOOD_EMOJI[entry.mood] || '😐'
+      }
+      const moodAccent = entry => {
+        const persona = personaFor(entry)
+        return (persona && persona.accent) || MOOD_COLORS[entry.mood] || MOOD_COLORS.daily
+      }
+      const moodCaption = entry => {
+        const persona = personaFor(entry)
+        const template = (persona && persona.cardCaption) || '{name} 的情绪卡 · {mood}'
+        return template
+          .replace('{name}', (persona && persona.name) || entry.personaName || '大肥鱼')
+          .replace('{mood}', MOOD_LABEL[entry.mood] || '日常')
+      }
+
       return h(
         'div',
         null,
@@ -1651,19 +1671,15 @@ window.__ModuleLoader__.load({
                           borderRadius: 12,
                           margin: '0 0 10px',
                           padding: '12px 16px',
-                          background: `linear-gradient(135deg, ${MOOD_COLORS[entry.mood] || MOOD_COLORS.daily}22, transparent 70%)`,
-                          border: `1px solid ${MOOD_COLORS[entry.mood] || MOOD_COLORS.daily}55`,
+                          background: `linear-gradient(135deg, ${moodAccent(entry)}22, transparent 70%)`,
+                          border: `1px solid ${moodAccent(entry)}55`,
                         },
                       },
-                      h('div', { style: { fontSize: 38, lineHeight: 1 } }, MOOD_EMOJI[entry.mood] || '😐'),
+                      h('div', { style: { fontSize: 38, lineHeight: 1 } }, moodFace(entry)),
                       h(
                         'div',
                         { style: { fontSize: 12, color: C.sub, lineHeight: '18px' } },
-                        h(
-                          'div',
-                          { style: { fontWeight: 600, color: C.ink } },
-                          `${entry.personaName || '大肥鱼'} 的情绪卡 · ${MOOD_LABEL[entry.mood] || '日常'}`,
-                        ),
+                        h('div', { style: { fontWeight: 600, color: C.ink } }, moodCaption(entry)),
                         h('div', null, '装了 dsh-meme 后这里会换成真实表情包'),
                       ),
                     ),
@@ -1864,7 +1880,16 @@ window.__ModuleLoader__.load({
               className: 'lm-btn',
               ...magnetProps(),
               onClick: () =>
-                setEditing({ id: '', name: '', emoji: '🙂', accent: '#8b7cf6', summary: '', prompt: '' }),
+                setEditing({
+                  id: '',
+                  name: '',
+                  emoji: '🙂',
+                  accent: '#8b7cf6',
+                  summary: '',
+                  prompt: '',
+                  moods: {},
+                  cardCaption: '',
+                }),
               style: {
                 marginLeft: 'auto',
                 fontSize: 12,
@@ -1984,6 +2009,8 @@ window.__ModuleLoader__.load({
                                 accent: persona.accent,
                                 summary: persona.summary,
                                 prompt: persona.prompt,
+                                moods: persona.moods || {},
+                                cardCaption: persona.cardCaption || '',
                               }),
                             style: linkButton(C.sub),
                           },
@@ -2086,6 +2113,80 @@ window.__ModuleLoader__.load({
                 rows: 4,
                 style: { ...inputStyle, resize: 'vertical', marginBottom: 10, fontFamily: 'inherit', lineHeight: '20px' },
               }),
+              h(
+                'div',
+                {
+                  style: {
+                    marginBottom: 10,
+                    paddingTop: 8,
+                    borderTop: `1px dashed ${C.line}`,
+                  },
+                },
+                h(
+                  'div',
+                  { style: { fontSize: 12, color: C.sub, marginBottom: 6 } },
+                  '情绪卡（没有表情包时的兜底配图，可只填部分心情）',
+                ),
+                h(
+                  'div',
+                  { style: { display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 } },
+                  MOOD_KEYS.map(key =>
+                    h(
+                      'label',
+                      {
+                        key,
+                        style: { display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: C.sub },
+                      },
+                      h('span', null, MOOD_LABEL[key]),
+                      h('input', {
+                        value: (editing.moods && editing.moods[key]) || '',
+                        placeholder: MOOD_EMOJI[key],
+                        onChange: event =>
+                          setEditing({
+                            ...editing,
+                            moods: { ...(editing.moods || {}), [key]: event.target.value },
+                          }),
+                        style: {
+                          ...inputStyle,
+                          width: 44,
+                          padding: '3px 4px',
+                          fontSize: 14,
+                          textAlign: 'center',
+                        },
+                      }),
+                    ),
+                  ),
+                ),
+                h('input', {
+                  value: editing.cardCaption || '',
+                  placeholder: '文案模板，可用 {name} 和 {mood}',
+                  onChange: event => setEditing({ ...editing, cardCaption: event.target.value }),
+                  style: { ...inputStyle },
+                }),
+              ),
+              h(
+                'div',
+                { style: { display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' } },
+                ['🐟', '😼', '🍵', '🤖', '🧘', '🦊', '🐧', '🎩'].map(face =>
+                  h(
+                    'button',
+                    {
+                      key: face,
+                      type: 'button',
+                      onClick: () => setEditing({ ...editing, emoji: face }),
+                      style: {
+                        fontSize: 16,
+                        padding: '2px 8px',
+                        borderRadius: 8,
+                        border: `1px solid ${C.line}`,
+                        background: 'transparent',
+                        cursor: 'pointer',
+                      },
+                    },
+                    face,
+                  ),
+                ),
+              ),
               h(
                 'div',
                 { style: { display: 'flex', gap: 8, justifyContent: 'flex-end' } },
