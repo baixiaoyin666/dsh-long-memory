@@ -8,6 +8,40 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ---
 
+## [0.11.0] — 2026-11-04
+
+### 新增
+
+- **衰减归档**：超过 60 天没有更新、且命中次数 <2 的记忆自动标记为 `archived`，不再进入系统提示；列表默认隐藏归档项，搜索 `archived:true` 可查看，支持单条/批量恢复。
+- **疑似重复 / 冲突**：把相似度 0.62–0.9 但未达合并阈值的记忆成对列出，可一键合并；合并保留更长表述、合并标签与来源、累加命中次数。
+- **搜索语法**：`tag:xxx`、`scope:global|workspace`、`archived:true`、`before:YYYY-MM-DD`，与普通关键词可混用。
+- **批量操作**：每条记忆左侧复选框，批量归档 / 恢复 / 合并 / 删除。
+- **日记可编辑**：每篇日记右上角「编辑」，改完保存即写入 `diary.json`。
+
+### 变更
+
+- 记忆新增字段：`weight`（重要度，合并时 +0.3，上限 5）、`lastUsedAt`、`archived`。
+- 版本号 `0.10.1` → `0.11.0`。
+
+---
+
+## [0.11.0] — 2026-11-04
+
+### Added
+
+- **Decay / archive**: memories untouched for 60 days with fewer than two hits are archived and dropped from the system brief; the list hides them by default, `archived:true` shows them, and they can be restored one by one or in bulk.
+- **Suspected duplicates / conflicts**: pairs with 0.62–0.9 similarity (below the merge threshold) are listed with a one-click merge that keeps the longer wording, unions tags and origins, and sums hits.
+- **Search syntax**: `tag:xxx`, `scope:global|workspace`, `archived:true`, `before:YYYY-MM-DD`, mixable with plain keywords.
+- **Bulk actions**: a checkbox per row with batch archive / restore / merge / delete.
+- **Editable diary**: an "编辑" button on each entry writes the edited body back to `diary.json`.
+
+### Changed
+
+- New memory fields: `weight` (importance, +0.3 per merge, capped at 5), `lastUsedAt`, `archived`.
+- Version `0.10.1` → `0.11.0`.
+
+---
+
 ## [0.10.1] — 2026-11-04
 
 ### 修复

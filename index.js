@@ -239,6 +239,8 @@ export function apply(ctx) {
         else merged += 1
       }
       if (added > 0) prune(state.entries, MAX_ENTRIES)
+      const archivedCount = archiveStale()
+      if (archivedCount > 0) await persist()
       if (added > 0 || merged > 0) await persist()
       stats.extractions += 1
       stats.lastExtractionAt = new Date().toISOString()
@@ -624,6 +626,55 @@ export function apply(ctx) {
     }
   }
 
+  // ---- lifecycle: archive cold rows, resolve near-duplicates --------------
+
+  const ARCHIVE_AFTER_DAYS = 60
+
+  function archiveStale(now = Date.now()) {
+    let archived = 0
+    for (const entry of state.entries) {
+      if (entry.archived) continue
+      const touched = entry.lastUsedAt || entry.updatedAt || entry.createdAt || 0
+      if (now - touched > ARCHIVE_AFTER_DAYS * 86400000 && (entry.hits || 0) < 2) {
+        entry.archived = true
+        archived += 1
+      }
+    }
+    return archived
+  }
+
+  function similarPairs() {
+    const entries = state.entries
+    const sets = entries.map(entry => tokenSet(entry.text))
+    const pairs = []
+    for (let i = 0; i < entries.length && pairs.length < 12; i += 1) {
+      for (let j = i + 1; j < entries.length && pairs.length < 12; j += 1) {
+        if (entries[i].scope !== entries[j].scope) continue
+        if (entries[i].scope === 'workspace' && entries[i].workspace !== entries[j].workspace) continue
+        const left = sets[i]
+        const right = sets[j]
+        if (left.size === 0 || right.size === 0) continue
+        let shared = 0
+        for (const token of left) if (right.has(token)) shared += 1
+        const score = Math.max(
+          shared / (left.size + right.size - shared),
+          shared / Math.min(left.size, right.size),
+        )
+        if (score >= 0.62 && score < 0.9) {
+          pairs.push({
+            a: entries[i].id,
+            b: entries[j].id,
+            aText: entries[i].text,
+            bText: entries[j].text,
+            score: Number(score.toFixed(2)),
+          })
+        }
+      }
+    }
+    return pairs
+  }
+
+
   function analyse() {
     const now = Date.now()
     const entries = state.entries
@@ -653,6 +704,8 @@ export function apply(ctx) {
         .slice(0, 8)
         .map(([tag, count]) => ({ tag, count })),
       duplicates: duplicateGroups(),
+      archived: entries.filter(entry => entry.archived).length,
+      pairs: similarPairs(),
     }
   }
 
@@ -1531,6 +1584,49 @@ export function apply(ctx) {
             settingsResult = { ok: true }
           } else {
             settingsResult = { ok: false, reason: '缺少工作区路径' }
+          }
+        } else if (body?.action === 'merge-memories') {
+          const ids = Array.isArray(body.ids) ? body.ids.map(String) : []
+          const group = state.entries.filter(entry => ids.includes(entry.id))
+          if (group.length < 2) {
+            settingsResult = { ok: false, reason: '至少选择两条记忆' }
+          } else if (new Set(group.map(entry => `${entry.scope}:${entry.workspace}`)).size > 1) {
+            settingsResult = { ok: false, reason: '只能合并同范围、同工作区的记忆' }
+          } else {
+            const keep = group.reduce((a, b) => (b.text.length > a.text.length ? b : a))
+            keep.tags = [...new Set(group.flatMap(entry => entry.tags || []))].slice(0, 6)
+            keep.hits = group.reduce((sum, entry) => sum + (entry.hits || 0), 0)
+            keep.updatedAt = Math.max(...group.map(entry => entry.updatedAt || 0))
+            keep.lastUsedAt = Date.now()
+            keep.origins = group.flatMap(entry => entry.origins || []).slice(-5)
+            const remove = new Set(group.filter(entry => entry.id !== keep.id).map(entry => entry.id))
+            state.entries = state.entries.filter(entry => !remove.has(entry.id))
+            await persist()
+            settingsResult = { ok: true, id: keep.id }
+          }
+        } else if (body?.action === 'archive-memories') {
+          const ids = Array.isArray(body.ids) ? body.ids.map(String) : []
+          const archived = Boolean(body.archived)
+          let count = 0
+          for (const entry of state.entries) {
+            if (!ids.includes(entry.id)) continue
+            entry.archived = archived
+            entry.lastUsedAt = Date.now()
+            count += 1
+          }
+          if (count) await persist()
+          settingsResult = { ok: true, count }
+        } else if (body?.action === 'diary-update') {
+          const date = String(body.date || '')
+          const entry = diary.entries.find(item => item.date === date)
+          if (!entry) {
+            settingsResult = { ok: false, reason: '没有这篇日记' }
+          } else {
+            if (typeof body.diary === 'string') entry.diary = cleanText(body.diary, 2000)
+            if (typeof body.fish === 'string') entry.fish = cleanText(body.fish, 200)
+            entry.updatedAt = Date.now()
+            await persistDiary()
+            settingsResult = { ok: true }
           }
         } else if (body?.action === 'backfill-start') {
           if (!backfill.running) {

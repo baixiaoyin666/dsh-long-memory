@@ -363,6 +363,7 @@ window.__ModuleLoader__.load({
       const [scope, setScope] = useState('all')
       const [busyId, setBusyId] = useState(null)
       const [openId, setOpenId] = useState(null)
+      const [selected, setSelected] = useState([])
 
       useEffect(() => {
         load()
@@ -409,6 +410,48 @@ window.__ModuleLoader__.load({
         [load],
       )
 
+      const toggleSelect = useCallback(id => {
+        setSelected(previous => (previous.includes(id) ? previous.filter(item => item !== id) : [...previous, id]))
+      }, [])
+
+      const batchAction = useCallback(
+        async (action, extra = {}) => {
+          if (!selected.length) return
+          if (action === 'forget-many') {
+            await Promise.all(
+              selected.map(id =>
+                fetch(API, {
+                  method: 'POST',
+                  headers: { 'content-type': 'application/json' },
+                  body: JSON.stringify({ action: 'forget', id }),
+                }),
+              ),
+            )
+          } else {
+            await fetch(API, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ action, ids: selected, ...extra }),
+            })
+          }
+          setSelected([])
+          await load()
+        },
+        [selected, load],
+      )
+
+      const mergePair = useCallback(
+        async pair => {
+          await fetch(API, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ action: 'merge-memories', ids: [pair.a, pair.b] }),
+          })
+          await load()
+        },
+        [load],
+      )
+
       const data = state.data
       const analysis = data && data.analysis
       const entries = data && data.entries ? data.entries : []
@@ -423,9 +466,23 @@ window.__ModuleLoader__.load({
       }, [backfill.running, load])
 
       const filtered = useMemo(() => {
-        const needle = query.trim().toLowerCase()
+        const spec = { tag: '', scope: '', archived: false, before: 0 }
+        const words = []
+        for (const token of query.trim().split(/\s+/)) {
+          if (!token) continue
+          if (token.startsWith('tag:')) spec.tag = token.slice(4).toLowerCase()
+          else if (token.startsWith('scope:')) spec.scope = token.slice(6)
+          else if (token === 'archived:true') spec.archived = true
+          else if (token.startsWith('before:')) spec.before = Date.parse(token.slice(7)) || 0
+          else words.push(token)
+        }
+        const needle = words.join(' ').toLowerCase()
         return entries.filter(entry => {
+          if (!spec.archived && entry.archived) return false
           if (scope !== 'all' && entry.scope !== scope) return false
+          if (spec.scope && entry.scope !== spec.scope) return false
+          if (spec.tag && !(entry.tags || []).some(tag => String(tag).toLowerCase().includes(spec.tag))) return false
+          if (spec.before && (entry.createdAt || 0) >= spec.before) return false
           if (!needle) return true
           const haystack = `${entry.text} ${(entry.tags || []).join(' ')} ${entry.workspace || ''}`.toLowerCase()
           return haystack.includes(needle)
@@ -781,6 +838,125 @@ window.__ModuleLoader__.load({
                   )
                 : null,
 
+              analysis.pairs && analysis.pairs.length
+                ? h(
+                    'div',
+                    {
+                      className: 'lm-glass lm-fade',
+                      style: glass({ borderRadius: 14, padding: '10px 14px', marginBottom: 12 }),
+                    },
+                    h(
+                      'div',
+                      { style: { fontSize: 12, color: C.sub, marginBottom: 4 } },
+                      `疑似重复 / 冲突（${analysis.pairs.length}）`,
+                    ),
+                    analysis.pairs.slice(0, 6).map((pair, index) =>
+                      h(
+                        'div',
+                        {
+                          key: `${pair.a}-${pair.b}`,
+                          style: {
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                            padding: '5px 0',
+                            borderTop: index === 0 ? 'none' : `1px solid ${C.line}`,
+                          },
+                        },
+                        h(
+                          'div',
+                          { style: { flex: 1, minWidth: 0, fontSize: 11, color: C.sub, lineHeight: '16px' } },
+                          h('div', { style: { color: C.ink } }, pair.aText),
+                          h('div', null, pair.bText),
+                        ),
+                        h('span', { style: { fontSize: 10, color: C.faint, flex: 'none' } }, pair.score),
+                        h(
+                          'button',
+                          {
+                            type: 'button',
+                            className: 'lm-btn',
+                            onClick: () => mergePair(pair),
+                            style: {
+                              flex: 'none',
+                              fontSize: 11,
+                              padding: '2px 9px',
+                              borderRadius: 999,
+                              border: `1px solid ${C.brand}`,
+                              color: C.brand,
+                              background: 'transparent',
+                              cursor: 'pointer',
+                            },
+                          },
+                          '合并',
+                        ),
+                      ),
+                    ),
+                  )
+                : null,
+
+              selected.length
+                ? h(
+                    'div',
+                    {
+                      className: 'lm-glass lm-fade',
+                      style: glass({
+                        borderRadius: 12,
+                        padding: '7px 12px',
+                        marginBottom: 10,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        flexWrap: 'wrap',
+                      }),
+                    },
+                    h('span', { style: { fontSize: 12, color: C.ink } }, `已选 ${selected.length} 条`),
+                    ...[
+                      ['归档', () => batchAction('archive-memories', { archived: true })],
+                      ['恢复', () => batchAction('archive-memories', { archived: false })],
+                      ['合并', () => batchAction('merge-memories')],
+                      ['删除', () => batchAction('forget-many')],
+                    ].map(([label, handler]) =>
+                      h(
+                        'button',
+                        {
+                          key: label,
+                          type: 'button',
+                          className: 'lm-btn',
+                          onClick: handler,
+                          style: {
+                            fontSize: 11,
+                            padding: '2px 10px',
+                            borderRadius: 999,
+                            border: `1px solid ${C.line}`,
+                            color: label === '删除' ? C.err : C.ink,
+                            background: 'transparent',
+                            cursor: 'pointer',
+                          },
+                        },
+                        label,
+                      ),
+                    ),
+                    h(
+                      'button',
+                      {
+                        type: 'button',
+                        onClick: () => setSelected([]),
+                        style: {
+                          fontSize: 11,
+                          marginLeft: 'auto',
+                          padding: '2px 10px',
+                          borderRadius: 999,
+                          border: 'none',
+                          background: 'transparent',
+                          color: C.faint,
+                          cursor: 'pointer',
+                        },
+                      },
+                      '取消选择',
+                    ),
+                  )
+                : null,
+
               h(
                 'div',
                 { style: { display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' } },
@@ -849,6 +1025,13 @@ window.__ModuleLoader__.load({
                         h(
                           'div',
                           { style: { display: 'flex', gap: 10 } },
+                          h('input', {
+                            type: 'checkbox',
+                            checked: selected.includes(entry.id),
+                            onChange: () => toggleSelect(entry.id),
+                            title: '选择这条记忆',
+                            style: { marginTop: 3, flex: 'none', cursor: 'pointer', accentColor: C.brand },
+                          }),
                           h(
                             'div',
                             { style: { flex: 1, minWidth: 0 } },
@@ -1025,6 +1208,19 @@ window.__ModuleLoader__.load({
     function DiaryView() {
       const [state, setState] = useState({ status: 'loading', data: null, error: null })
       const [busy, setBusy] = useState(false)
+      const [editingDate, setEditingDate] = useState('')
+      const [draft, setDraft] = useState('')
+
+      const saveDiary = useCallback(async date => {
+        await fetch(API, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ action: 'diary-update', date, diary: draft }),
+        })
+        setEditingDate('')
+        const data = await fetchPanel()
+        setState({ status: 'ready', data, error: null })
+      }, [draft])
 
       const load = useCallback(async force => {
         setBusy(true)
@@ -1198,6 +1394,28 @@ window.__ModuleLoader__.load({
                     { style: { fontSize: 11, color: C.faint } },
                     entryDateText(entry.date, entry.updatedAt).updated || relTime(entry.updatedAt),
                   ),
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'lm-btn',
+                      onClick: () => {
+                        setEditingDate(entry.date)
+                        setDraft(entry.diary || '')
+                      },
+                      style: {
+                        marginLeft: entry.emoji ? 0 : 'auto',
+                        fontSize: 11,
+                        padding: '2px 9px',
+                        borderRadius: 999,
+                        border: `1px solid ${C.line}`,
+                        background: 'transparent',
+                        color: C.sub,
+                        cursor: 'pointer',
+                      },
+                    },
+                    '编辑',
+                  ),
                   entry.emoji
                     ? h('div', { style: { fontSize: 16, letterSpacing: 4, marginLeft: 'auto' } }, entry.emoji)
                     : null,
@@ -1246,20 +1464,82 @@ window.__ModuleLoader__.load({
                         h('div', null, '装了 dsh-meme 后这里会换成真实表情包'),
                       ),
                     ),
-                h(
-                  'div',
-                  {
-                    style: {
-                      fontSize: 14,
-                      lineHeight: '24px',
-                      whiteSpace: 'pre-wrap',
-                      wordBreak: 'break-word',
-                      color: C.ink,
-                      marginBottom: 10,
-                    },
-                  },
-                  entry.diary,
-                ),
+                editingDate === entry.date
+                  ? h(
+                      'div',
+                      { style: { marginBottom: 10 } },
+                      h('textarea', {
+                        value: draft,
+                        onChange: event => setDraft(event.target.value),
+                        rows: 8,
+                        style: {
+                          width: '100%',
+                          boxSizing: 'border-box',
+                          fontSize: 14,
+                          lineHeight: '22px',
+                          padding: '10px 12px',
+                          borderRadius: 10,
+                          border: `1px solid ${C.line}`,
+                          background: 'transparent',
+                          color: C.ink,
+                          resize: 'vertical',
+                          outline: 'none',
+                        },
+                      }),
+                      h(
+                        'div',
+                        { style: { display: 'flex', gap: 8, marginTop: 6, justifyContent: 'flex-end' } },
+                        h(
+                          'button',
+                          {
+                            type: 'button',
+                            onClick: () => setEditingDate(''),
+                            style: {
+                              fontSize: 11,
+                              padding: '3px 10px',
+                              borderRadius: 999,
+                              border: `1px solid ${C.line}`,
+                              background: 'transparent',
+                              color: C.sub,
+                              cursor: 'pointer',
+                            },
+                          },
+                          '取消',
+                        ),
+                        h(
+                          'button',
+                          {
+                            type: 'button',
+                            className: 'lm-btn',
+                            onClick: () => saveDiary(entry.date),
+                            style: {
+                              fontSize: 11,
+                              padding: '3px 12px',
+                              borderRadius: 999,
+                              border: 'none',
+                              background: C.brand,
+                              color: '#fff',
+                              cursor: 'pointer',
+                            },
+                          },
+                          '保存',
+                        ),
+                      ),
+                    )
+                  : h(
+                      'div',
+                      {
+                        style: {
+                          fontSize: 14,
+                          lineHeight: '24px',
+                          whiteSpace: 'pre-wrap',
+                          wordBreak: 'break-word',
+                          color: C.ink,
+                          marginBottom: 10,
+                        },
+                      },
+                      entry.diary,
+                    ),
                 entry.fish
                   ? h(
                       'div',
