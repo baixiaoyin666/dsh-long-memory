@@ -307,10 +307,26 @@ export function apply(ctx) {
     return { userText: user.join('\n').trim(), assistantText: assistant.join('\n').trim() }
   }
 
+  function invalidateBrief(sessionId) {
+    try {
+      const agents = ctx.get('agents')
+      const list = typeof agents?.list === 'function' ? agents.list() : []
+      for (const agent of list) {
+        if (agent && agent.session && agent.session.id === sessionId) briefs.delete(agent)
+      }
+    } catch {
+      /* agents service is optional */
+    }
+  }
+
   function onSessionEvent(session, event) {
     if (!ready || !event || typeof event.type !== 'string') return
     if (!session || !session.id) return
     if (session.header?.origin === 'subagent') return
+    if (event.type.startsWith('compaction/')) {
+      invalidateBrief(session.id)
+      return
+    }
 
     const id = session.id
     switch (event.type) {
@@ -1584,6 +1600,88 @@ export function apply(ctx) {
             settingsResult = { ok: true }
           } else {
             settingsResult = { ok: false, reason: '缺少工作区路径' }
+          }
+        } else if (body?.action === 'update') {
+          const id = String(body.id || '')
+          const entry = state.entries.find(item => item.id === id)
+          if (!entry) {
+            settingsResult = { ok: false, reason: '没有这条记忆' }
+          } else {
+            const text = typeof body.text === 'string' ? cleanText(body.text, 300) : entry.text
+            const scope =
+              body.scope === 'workspace' ? 'workspace' : body.scope === 'global' ? 'global' : entry.scope
+            const workspace =
+              scope === 'workspace' ? normalizeCwd(String(body.workspace || entry.workspace || '')) : ''
+            if (scope === 'workspace' && !workspace) {
+              settingsResult = { ok: false, reason: '工作区记忆需要填写目录' }
+            } else if (!text) {
+              settingsResult = { ok: false, reason: '内容不能为空' }
+            } else {
+              entry.text = text
+              entry.scope = scope
+              entry.workspace = workspace
+              if (Array.isArray(body.tags)) {
+                entry.tags = body.tags
+                  .map(tag => cleanText(String(tag), 20))
+                  .filter(Boolean)
+                  .slice(0, 6)
+              }
+              entry.updatedAt = Date.now()
+              entry.lastUsedAt = Date.now()
+              entry.archived = false
+              await persist()
+              settingsResult = { ok: true, id }
+            }
+          }
+        } else if (body?.action === 'import') {
+          const payload = body.payload
+          const list = Array.isArray(payload?.entries)
+            ? payload.entries
+            : Array.isArray(payload)
+              ? payload
+              : []
+          if (list.length === 0) {
+            settingsResult = { ok: false, reason: '文件里没有记忆条目' }
+          } else {
+            const known = new Set(state.entries.map(entry => entry.id))
+            let added = 0
+            let skipped = 0
+            for (const raw of list.slice(0, 2000)) {
+              const text = cleanText(String(raw?.text || ''), 300)
+              if (!text || (raw?.id && known.has(String(raw.id)))) {
+                skipped += 1
+                continue
+              }
+              const scope = raw?.scope === 'workspace' ? 'workspace' : 'global'
+              const workspace = scope === 'workspace' ? normalizeCwd(String(raw.workspace || '')) : ''
+              if (scope === 'workspace' && !workspace) {
+                skipped += 1
+                continue
+              }
+              const now = Date.now()
+              state.entries.push({
+                id: raw?.id ? String(raw.id) : `${now}-${Math.random().toString(36).slice(2, 8)}`,
+                scope,
+                workspace,
+                text,
+                tags: Array.isArray(raw?.tags)
+                  ? raw.tags.map(tag => cleanText(String(tag), 20)).filter(Boolean).slice(0, 6)
+                  : [],
+                createdAt: Number(raw?.createdAt) || now,
+                updatedAt: Number(raw?.updatedAt) || now,
+                lastUsedAt: Number(raw?.lastUsedAt) || now,
+                weight: Number(raw?.weight) || 1,
+                archived: Boolean(raw?.archived),
+                hits: Number(raw?.hits) || 0,
+                source: 'import',
+                origins: Array.isArray(raw?.origins) ? raw.origins.slice(-5) : [],
+              })
+              if (raw?.id) known.add(String(raw.id))
+              added += 1
+            }
+            prune(state.entries, MAX_ENTRIES)
+            await persist()
+            settingsResult = { ok: true, added, skipped }
           }
         } else if (body?.action === 'merge-memories') {
           const ids = Array.isArray(body.ids) ? body.ids.map(String) : []

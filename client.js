@@ -364,6 +364,8 @@ window.__ModuleLoader__.load({
       const [busyId, setBusyId] = useState(null)
       const [openId, setOpenId] = useState(null)
       const [selected, setSelected] = useState([])
+      const [editId, setEditId] = useState('')
+      const [editForm, setEditForm] = useState(null)
 
       useEffect(() => {
         load()
@@ -452,6 +454,55 @@ window.__ModuleLoader__.load({
         [load],
       )
 
+      const startEdit = useCallback(entry => {
+        setEditId(entry.id)
+        setEditForm({
+          text: entry.text,
+          tags: (entry.tags || []).join(', '),
+          scope: entry.scope,
+          workspace: entry.workspace || '',
+        })
+      }, [])
+
+      const saveEdit = useCallback(async () => {
+        if (!editForm) return
+        await fetch(API, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            action: 'update',
+            id: editId,
+            text: editForm.text,
+            tags: editForm.tags
+              .split(',')
+              .map(tag => tag.trim())
+              .filter(Boolean),
+            scope: editForm.scope,
+            workspace: editForm.workspace,
+          }),
+        })
+        setEditId('')
+        setEditForm(null)
+        await load()
+      }, [editId, editForm, load])
+
+      const importFile = useCallback(async event => {
+        const file = event.target.files && event.target.files[0]
+        event.target.value = ''
+        if (!file) return
+        try {
+          const payload = JSON.parse(await file.text())
+          await fetch(API, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ action: 'import', payload }),
+          })
+        } catch {
+          /* malformed JSON is ignored; the payload stays unchanged */
+        }
+        await load()
+      }, [load])
+
       const data = state.data
       const analysis = data && data.analysis
       const entries = data && data.entries ? data.entries : []
@@ -532,6 +583,22 @@ window.__ModuleLoader__.load({
                   style: { fontSize: 12, color: C.sub, textDecoration: 'none' },
                 },
                 'JSON',
+              )
+            : null,
+          data
+            ? h(
+                'label',
+                {
+                  style: { fontSize: 12, color: C.sub, cursor: 'pointer' },
+                  title: '导入之前导出的 JSON 备份',
+                },
+                '导入',
+                h('input', {
+                  type: 'file',
+                  accept: '.json,application/json',
+                  onChange: importFile,
+                  style: { display: 'none' },
+                }),
               )
             : null,
           h(
@@ -1062,7 +1129,125 @@ window.__ModuleLoader__.load({
                                 `${relTime(entry.updatedAt)}${entry.hits ? ` · 命中 ${entry.hits}` : ''}`,
                               ),
                             ),
-                            h('div', { style: { fontSize: 13, lineHeight: '20px', wordBreak: 'break-word' } }, entry.text),
+                            editId === entry.id && editForm
+                              ? h(
+                                  'div',
+                                  { style: { marginTop: 4 } },
+                                  h('textarea', {
+                                    value: editForm.text,
+                                    rows: 3,
+                                    onChange: event => setEditForm({ ...editForm, text: event.target.value }),
+                                    style: {
+                                      width: '100%',
+                                      boxSizing: 'border-box',
+                                      fontSize: 13,
+                                      lineHeight: '20px',
+                                      padding: '8px 10px',
+                                      borderRadius: 8,
+                                      border: `1px solid ${C.line}`,
+                                      background: 'transparent',
+                                      color: C.ink,
+                                      resize: 'vertical',
+                                      outline: 'none',
+                                    },
+                                  }),
+                                  h(
+                                    'div',
+                                    { style: { display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' } },
+                                    h('input', {
+                                      value: editForm.tags,
+                                      onChange: event => setEditForm({ ...editForm, tags: event.target.value }),
+                                      placeholder: '标签，逗号分隔',
+                                      style: {
+                                        flex: '1 1 150px',
+                                        fontSize: 12,
+                                        padding: '5px 8px',
+                                        borderRadius: 8,
+                                        border: `1px solid ${C.line}`,
+                                        background: 'transparent',
+                                        color: C.ink,
+                                        outline: 'none',
+                                      },
+                                    }),
+                                    h(
+                                      'select',
+                                      {
+                                        value: editForm.scope,
+                                        onChange: event => setEditForm({ ...editForm, scope: event.target.value }),
+                                        style: {
+                                          fontSize: 12,
+                                          padding: '5px 8px',
+                                          borderRadius: 8,
+                                          border: `1px solid ${C.line}`,
+                                          background: 'transparent',
+                                          color: C.ink,
+                                        },
+                                      },
+                                      h('option', { value: 'global' }, '全局'),
+                                      h('option', { value: 'workspace' }, '工作区'),
+                                    ),
+                                    editForm.scope === 'workspace'
+                                      ? h('input', {
+                                          value: editForm.workspace,
+                                          onChange: event => setEditForm({ ...editForm, workspace: event.target.value }),
+                                          placeholder: '工作区目录',
+                                          style: {
+                                            flex: '1 1 200px',
+                                            fontSize: 12,
+                                            padding: '5px 8px',
+                                            borderRadius: 8,
+                                            border: `1px solid ${C.line}`,
+                                            background: 'transparent',
+                                            color: C.ink,
+                                            outline: 'none',
+                                          },
+                                        })
+                                      : null,
+                                  ),
+                                  h(
+                                    'div',
+                                    { style: { display: 'flex', gap: 6, marginTop: 6, justifyContent: 'flex-end' } },
+                                    h(
+                                      'button',
+                                      {
+                                        type: 'button',
+                                        onClick: () => {
+                                          setEditId('')
+                                          setEditForm(null)
+                                        },
+                                        style: {
+                                          fontSize: 11,
+                                          padding: '3px 10px',
+                                          borderRadius: 999,
+                                          border: `1px solid ${C.line}`,
+                                          background: 'transparent',
+                                          color: C.sub,
+                                          cursor: 'pointer',
+                                        },
+                                      },
+                                      '取消',
+                                    ),
+                                    h(
+                                      'button',
+                                      {
+                                        type: 'button',
+                                        className: 'lm-btn',
+                                        onClick: saveEdit,
+                                        style: {
+                                          fontSize: 11,
+                                          padding: '3px 12px',
+                                          borderRadius: 999,
+                                          border: 'none',
+                                          background: C.brand,
+                                          color: '#fff',
+                                          cursor: 'pointer',
+                                        },
+                                      },
+                                      '保存',
+                                    ),
+                                  ),
+                                )
+                              : h('div', { style: { fontSize: 13, lineHeight: '20px', wordBreak: 'break-word' } }, entry.text),
                             (entry.tags || []).length
                               ? h(
                                   'div',
@@ -1086,6 +1271,24 @@ window.__ModuleLoader__.load({
                                 },
                               },
                               open ? '收起对话 ▲' : `查看对话${origins.length ? ` (${origins.length})` : ''} ▼`,
+                            ),
+                            h(
+                              'button',
+                              {
+                                type: 'button',
+                                onClick: () => startEdit(entry),
+                                style: {
+                                  marginTop: 6,
+                                  marginLeft: 10,
+                                  padding: 0,
+                                  fontSize: 11,
+                                  color: C.sub,
+                                  background: 'transparent',
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                },
+                              },
+                              '编辑',
                             ),
                             open
                               ? h(

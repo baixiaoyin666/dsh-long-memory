@@ -8,6 +8,34 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ---
 
+## [0.12.0] — 2026-11-04
+
+### 新增
+
+- **记忆可编辑**：每条记忆的「编辑」可以改正文、标签、范围和所属工作区；保存后立即生效，不需要删除重建。
+- **导入 JSON**：面板右上角「导入」，读入导出的 JSON 备份，按 `id` 去重合并（已存在则跳过），导入的条目会补齐 `weight` / `lastUsedAt` / `archived` 字段。
+- **会话内刷新摘要**：上下文压缩（compaction）发生时重建该会话的记忆摘要——那一刻 prompt 缓存本来就失效，所以不额外增加成本；长会话跑到后半段也能看到新记住的事实。
+
+### 变更
+
+- 版本号 `0.11.0` → `0.12.0`。
+
+---
+
+## [0.12.0] — 2026-11-04
+
+### Added
+
+- **Editable memories**: each row's "编辑" edits the text, tags, scope and workspace; saving takes effect immediately, no delete-and-recreate needed.
+- **JSON import**: "导入" in the panel header reads an exported backup and merges it by `id` (existing ids are skipped), filling in `weight` / `lastUsedAt` / `archived` for imported rows.
+- **In-session brief refresh**: when context compaction happens the session's memory digest is rebuilt — the prompt cache is already invalid at that point, so it costs nothing extra, and long sessions see facts learned later in the same session.
+
+### Changed
+
+- Version `0.11.0` → `0.12.0`.
+
+---
+
 ## [0.11.0] — 2026-11-04
 
 ### 新增
