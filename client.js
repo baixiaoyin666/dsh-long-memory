@@ -767,11 +767,15 @@ window.__ModuleLoader__.load({
                           marginBottom: 8,
                         },
                       },
-                      h('span', { style: { fontSize: 18, lineHeight: '20px' } }, '🐟'),
+                      h('span', { style: { fontSize: 18, lineHeight: '20px' } }, entry.personaEmoji || '🐟'),
                       h(
                         'div',
                         null,
-                        h('div', { style: { fontSize: 11, color: C.faint, marginBottom: 2 } }, '大肥鱼的留言'),
+                        h(
+                          'div',
+                          { style: { fontSize: 11, color: C.faint, marginBottom: 2 } },
+                          `${entry.personaName || '大肥鱼'} 的留言`,
+                        ),
                         h('div', { style: { fontSize: 13, lineHeight: '20px', color: C.ink } }, entry.fish),
                       ),
                     )
@@ -788,7 +792,299 @@ window.__ModuleLoader__.load({
       )
     }
 
-    /** Page shell: memory dashboard and diary behind two tabs. */
+    /** Personas: a data table of built-in archetypes and user-defined ones. */
+    function PersonaView() {
+      const [state, setState] = useState({ status: 'loading', data: null, error: null })
+      const [editing, setEditing] = useState(null)
+      const [busy, setBusy] = useState(false)
+      const [notice, setNotice] = useState('')
+
+      const load = useCallback(async () => {
+        try {
+          const data = await fetchPanel()
+          setState({ status: 'ready', data, error: null })
+        } catch (error) {
+          setState({ status: 'error', data: null, error: String(error && error.message ? error.message : error) })
+        }
+      }, [])
+
+      useEffect(() => {
+        load()
+      }, [load])
+
+      const send = useCallback(
+        async payload => {
+          setBusy(true)
+          try {
+            const response = await fetch(API, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify(payload),
+            })
+            const data = await readJson(response)
+            if (data.personaResult && data.personaResult.ok === false) setNotice(data.personaResult.reason || '操作失败')
+            else setNotice('')
+            setState({ status: 'ready', data, error: null })
+          } catch (error) {
+            setNotice(String(error && error.message ? error.message : error))
+          } finally {
+            setBusy(false)
+          }
+        },
+        [],
+      )
+
+      const personas = (state.data && state.data.personas) || { activeId: '', list: [] }
+      const list = personas.list || []
+
+      const inputStyle = {
+        fontSize: 13,
+        padding: '6px 9px',
+        borderRadius: 8,
+        border: `1px solid ${C.line}`,
+        background: C.card,
+        color: C.ink,
+        outline: 'none',
+        width: '100%',
+        boxSizing: 'border-box',
+      }
+      const cell = { padding: '8px 10px', fontSize: 13, color: C.ink, verticalAlign: 'top' }
+      const head = { padding: '8px 10px', fontSize: 11, color: C.faint, fontWeight: 600, textAlign: 'left' }
+      const linkButton = color => ({
+        fontSize: 12,
+        color: color || C.brand,
+        background: 'transparent',
+        border: 'none',
+        cursor: 'pointer',
+        padding: '0 4px',
+      })
+
+      return h(
+        'div',
+        null,
+        h(
+          'div',
+          { style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 } },
+          h('div', { style: { fontSize: 14, fontWeight: 600, color: C.ink } }, '人格'),
+          h('div', { style: { fontSize: 12, color: C.faint } }, '日记里的留言由当前人格来写'),
+          h(
+            'button',
+            {
+              type: 'button',
+              onClick: () =>
+                setEditing({ id: '', name: '', emoji: '🙂', summary: '', prompt: '' }),
+              style: {
+                marginLeft: 'auto',
+                fontSize: 12,
+                color: C.brand,
+                background: 'transparent',
+                border: `1px solid ${C.brand}`,
+                borderRadius: 8,
+                padding: '3px 10px',
+                cursor: 'pointer',
+              },
+            },
+            '新建人格',
+          ),
+        ),
+
+        notice ? h('div', { style: { fontSize: 12, color: C.err, marginBottom: 8 } }, notice) : null,
+        state.status === 'error' ? h(ErrorBox, { error: state.error, onRetry: load }) : null,
+
+        // data table
+        h(
+          'div',
+          { style: { border: `1px solid ${C.line}`, borderRadius: 12, overflow: 'hidden', background: C.card } },
+          h(
+            'table',
+            { style: { width: '100%', borderCollapse: 'collapse' } },
+            h(
+              'thead',
+              null,
+              h(
+                'tr',
+                { style: { background: C.soft } },
+                h('th', { style: head }, '人格'),
+                h('th', { style: head }, '类型'),
+                h('th', { style: head }, '风格摘要'),
+                h('th', { style: head }, '状态'),
+                h('th', { style: { ...head, textAlign: 'right' } }, '操作'),
+              ),
+            ),
+            h(
+              'tbody',
+              null,
+              list.map(persona =>
+                h(
+                  'tr',
+                  { key: persona.id, style: { borderTop: `1px solid ${C.line}` } },
+                  h(
+                    'td',
+                    { style: cell },
+                    h('span', { style: { marginRight: 6 } }, persona.emoji || '🙂'),
+                    h('span', { style: { fontWeight: persona.id === personas.activeId ? 600 : 400 } }, persona.name),
+                  ),
+                  h('td', { style: { ...cell, color: C.sub } }, persona.builtin ? '内置' : '自定义'),
+                  h('td', { style: { ...cell, color: C.sub, maxWidth: 360, lineHeight: '19px' } }, persona.summary || '—'),
+                  h(
+                    'td',
+                    { style: cell },
+                    persona.id === personas.activeId
+                      ? h(Chip, { color: C.ok }, '启用中')
+                      : h('span', { style: { fontSize: 11, color: C.faint } }, '—'),
+                  ),
+                  h(
+                    'td',
+                    { style: { ...cell, textAlign: 'right', whiteSpace: 'nowrap' } },
+                    persona.id === personas.activeId
+                      ? null
+                      : h(
+                          'button',
+                          {
+                            type: 'button',
+                            disabled: busy,
+                            onClick: () => send({ action: 'persona-activate', id: persona.id }),
+                            style: linkButton(C.brand),
+                          },
+                          '启用',
+                        ),
+                    !persona.builtin
+                      ? h(
+                          'button',
+                          {
+                            type: 'button',
+                            disabled: busy,
+                            onClick: () => setEditing(persona),
+                            style: linkButton(C.sub),
+                          },
+                          '编辑',
+                        )
+                      : null,
+                    persona.builtin
+                      ? h(
+                          'button',
+                          {
+                            type: 'button',
+                            onClick: () =>
+                              setEditing({
+                                id: '',
+                                name: `${persona.name} 副本`,
+                                emoji: persona.emoji,
+                                summary: persona.summary,
+                                prompt: persona.prompt,
+                              }),
+                            style: linkButton(C.sub),
+                          },
+                          '复制',
+                        )
+                      : h(
+                          'button',
+                          {
+                            type: 'button',
+                            disabled: busy,
+                            onClick: () => send({ action: 'persona-delete', id: persona.id }),
+                            style: linkButton(C.err),
+                          },
+                          '删除',
+                        ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+
+        // editor
+        editing
+          ? h(
+              'div',
+              {
+                style: {
+                  marginTop: 12,
+                  border: `1px solid ${C.line}`,
+                  borderRadius: 12,
+                  background: C.card,
+                  padding: '14px',
+                },
+              },
+              h('div', { style: { fontSize: 13, fontWeight: 600, marginBottom: 10 } }, editing.id ? '编辑人格' : '新建人格'),
+              h(
+                'div',
+                { style: { display: 'flex', gap: 8, marginBottom: 8 } },
+                h('input', {
+                  value: editing.name,
+                  placeholder: '名称，如「毒舌管家」',
+                  onChange: event => setEditing({ ...editing, name: event.target.value }),
+                  style: { ...inputStyle, flex: '1 1 auto' },
+                }),
+                h('input', {
+                  value: editing.emoji,
+                  placeholder: '🙂',
+                  onChange: event => setEditing({ ...editing, emoji: event.target.value }),
+                  style: { ...inputStyle, width: 64, flex: 'none' },
+                }),
+              ),
+              h('input', {
+                value: editing.summary,
+                placeholder: '一句话风格摘要（显示在表格里）',
+                onChange: event => setEditing({ ...editing, summary: event.target.value }),
+                style: { ...inputStyle, marginBottom: 8 },
+              }),
+              h('textarea', {
+                value: editing.prompt,
+                placeholder: '角色设定：口吻、性格、习惯、口头禅……日记会按这个设定来写',
+                onChange: event => setEditing({ ...editing, prompt: event.target.value }),
+                rows: 4,
+                style: { ...inputStyle, resize: 'vertical', marginBottom: 10, fontFamily: 'inherit', lineHeight: '20px' },
+              }),
+              h(
+                'div',
+                { style: { display: 'flex', gap: 8, justifyContent: 'flex-end' } },
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    onClick: () => setEditing(null),
+                    style: {
+                      fontSize: 12,
+                      padding: '5px 12px',
+                      borderRadius: 8,
+                      border: `1px solid ${C.line}`,
+                      background: 'transparent',
+                      color: C.sub,
+                      cursor: 'pointer',
+                    },
+                  },
+                  '取消',
+                ),
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    disabled: busy,
+                    onClick: async () => {
+                      await send({ action: 'persona-save', persona: editing })
+                      setEditing(null)
+                    },
+                    style: {
+                      fontSize: 12,
+                      padding: '5px 12px',
+                      borderRadius: 8,
+                      border: 'none',
+                      background: C.brand,
+                      color: '#fff',
+                      cursor: 'pointer',
+                    },
+                  },
+                  '保存并启用',
+                ),
+              ),
+            )
+          : null,
+      )
+    }
+
+    /** Page shell: memory dashboard, diary and personas behind three tabs. */
     function MemoryPage() {
       const [tab, setTab] = useState('memory')
       const tabStyle = active => ({
@@ -808,8 +1104,11 @@ window.__ModuleLoader__.load({
           { style: { display: 'flex', gap: 6, marginBottom: 12 } },
           h('button', { type: 'button', onClick: () => setTab('memory'), style: tabStyle(tab === 'memory') }, '记忆'),
           h('button', { type: 'button', onClick: () => setTab('diary'), style: tabStyle(tab === 'diary') }, '日记'),
+          h('button', { type: 'button', onClick: () => setTab('persona'), style: tabStyle(tab === 'persona') }, '人格'),
         ),
-        tab === 'memory' ? h(Panel, { compact: false }) : h(DiaryView, null),
+        tab === 'memory' ? h(Panel, { compact: false }) : null,
+        tab === 'diary' ? h(DiaryView, null) : null,
+        tab === 'persona' ? h(PersonaView, null) : null,
       )
     }
 

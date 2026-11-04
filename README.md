@@ -47,7 +47,9 @@
 
 每条记忆都能展开 **「查看对话」**：显示产生它的那一轮完整用户消息与助手回复（含会话 id、轮次、时间），以及这条记忆的创建/更新时间、命中次数、来源与工作区完整路径。来源对话在提炼时随记忆一起保存，每条最多保留最近 5 个来源。
 
-**日常日记**：面板顶部有「记忆 / 日记」两个标签。日记每天一篇，自动从当天的记忆里写成第一人称短文，底部附一条「大肥鱼」的情绪留言，并记录当天观察到的用户日常习惯（习惯会作为 `global` 记忆、带 `habit` 标签继续参与后续提炼与检索）。日记存在 `diary.json`；想看最新的点「重写今天」。
+**日常日记**：面板顶部有「记忆 / 日记 / 人格」三个标签。日记每天一篇，自动从当天的记忆里写成第一人称短文，底部附一条当前人格的情绪留言，并记录当天观察到的用户日常习惯（习惯会作为 `global` 记忆、带 `habit` 标签继续参与后续提炼与检索）。日记存在 `diary.json`；想看最新的点「重写今天」。
+
+**人格系统**：默认人格是「🐟 大肥鱼」，另内置「傲娇猫娘」「温柔学姐」「毒舌管家」「赛博黑客」「佛系禅师」可直接选用。人格表格里可以一键启用、复制内置人格、编辑或删除自定义人格；新建时填名称、emoji、风格摘要和角色设定（口吻、性格、口头禅），日记与留言会按当前人格的设定来写。人格存在 `personas.json`，内置人格随插件更新，自定义人格只存本地。
 
 **记忆范围怎么选**：
 
@@ -161,7 +163,9 @@ Call the tools only when you want to be explicit:
 
 Every row expands into **"view conversation"**: the full user message and assistant reply of the turn it came from (with session id, turn number and time), plus the row's created/updated times, hit count, source and full workspace path. The source conversation is captured at distillation time; each row keeps its five most recent sources.
 
-**Daily diary** — the panel has two tabs, **Memory** and **Diary**. The diary writes one entry per day from that day's memories: a short first-person note, a comment from the desk pet 「大肥鱼」, and the habits observed that day (habits are stored as `global` memories tagged `habit`, so they keep feeding later distillation and search). Entries live in `diary.json`; "rewrite today" regenerates the current one.
+**Daily diary** — the panel has three tabs: **Memory**, **Diary** and **Personas**. The diary writes one entry per day from that day's memories: a short first-person note, a comment from the active persona, and the habits observed that day (habits are stored as `global` memories tagged `habit`, so they keep feeding later distillation and search). Entries live in `diary.json`; "rewrite today" regenerates the current one.
+
+**Personas** — the default is 「🐟 大肥鱼」, with 「傲娇猫娘」「温柔学姐」「毒舌管家」「赛博黑客」「佛系禅师」 built in. The table lets you activate one, copy a built-in into a custom one, or edit/delete your own; a persona is a name, an emoji, a style summary and a role prompt that the diary and its comment are written in. Built-in personas ship with the plugin, custom ones live in `personas.json` on your machine.
 
 **Choosing a scope**:
 

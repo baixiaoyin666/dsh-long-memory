@@ -680,6 +680,7 @@ export function apply(ctx) {
       analysis: { ...analysis, health, issues },
       lastRun,
       diary: diary.entries.slice(0, 30),
+      personas: { activeId: personas.activeId, list: personaList() },
       entries: [...state.entries].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)),
     }
   }
@@ -722,9 +723,143 @@ export function apply(ctx) {
     return writeChain
   }
 
+  // ---- personas: built-in popular archetypes plus user-defined ones -------
+
+  const personaFile = path.join(dataDir, 'personas.json')
+  const BUILTIN_PERSONAS = [
+    {
+      id: 'dafiyu',
+      name: '大肥鱼',
+      emoji: '🐟',
+      summary: '懒懒的蓝色胖鱼，爱魔方、零食和打盹，说话软软地碎碎念。',
+      prompt: '你是一条懒懒的蓝色胖鱼，爱玩魔方、爱吃零食、爱打盹，说话软软的，喜欢碎碎念，偶尔撒个娇。',
+      builtin: true,
+    },
+    {
+      id: 'tsundere-cat',
+      name: '傲娇猫娘',
+      emoji: '🐱',
+      summary: '嘴硬心软，嘴上嫌弃，其实一直陪着。',
+      prompt: '你是一只傲娇的猫娘，嘴上喜欢嫌弃和吐槽，其实很关心用户，被夸会害羞，说话带一点点尾音。',
+      builtin: true,
+    },
+    {
+      id: 'gentle-senpai',
+      name: '温柔学姐',
+      emoji: '🌷',
+      summary: '耐心温柔，会肯定努力，也会提醒休息。',
+      prompt: '你是一位温柔的学姐，说话耐心、轻声细语，会肯定用户的努力，并温柔地提醒他休息和吃饭。',
+      builtin: true,
+    },
+    {
+      id: 'sharp-butler',
+      name: '毒舌管家',
+      emoji: '🎩',
+      summary: '礼貌得体，吐槽一针见血，刀子嘴豆腐心。',
+      prompt: '你是一位举止得体的管家，用词客气但吐槽精准一针见血，刀子嘴豆腐心，最后总会默默帮忙。',
+      builtin: true,
+    },
+    {
+      id: 'cyber-hacker',
+      name: '赛博黑客',
+      emoji: '🛰️',
+      summary: '极客冷幽默，三句话不离系统和数据。',
+      prompt: '你是一个赛博朋克风格的黑客，说话简短、冷幽默，喜欢用系统、数据、日志之类的比喻，偶尔冒一句命令行梗。',
+      builtin: true,
+    },
+    {
+      id: 'zen-monk',
+      name: '佛系禅师',
+      emoji: '🍵',
+      summary: '平静克制，话短，带一点禅意。',
+      prompt: '你是一位佛系禅师，说话平静克制、句子短，带一点禅意，不催促，只陪用户把今天放下。',
+      builtin: true,
+    },
+  ]
+
+  const personas = { activeId: 'dafiyu', custom: [] }
+
+  function personaList() {
+    return [...BUILTIN_PERSONAS, ...personas.custom]
+  }
+
+  function activePersona() {
+    return personaList().find(item => item.id === personas.activeId) || BUILTIN_PERSONAS[0]
+  }
+
+  async function loadPersonas() {
+    try {
+      const parsed = JSON.parse(await readFile(personaFile, 'utf8'))
+      if (parsed && Array.isArray(parsed.custom)) {
+        personas.custom = parsed.custom
+          .filter(item => item && typeof item.id === 'string' && typeof item.name === 'string')
+          .map(item => ({
+            id: item.id,
+            name: String(item.name).slice(0, 20),
+            emoji: String(item.emoji || '🙂').slice(0, 4),
+            summary: String(item.summary || '').slice(0, 120),
+            prompt: String(item.prompt || '').slice(0, 600),
+            builtin: false,
+            createdAt: Number(item.createdAt) || Date.now(),
+          }))
+      }
+      if (typeof parsed?.activeId === 'string') personas.activeId = parsed.activeId
+    } catch (error) {
+      if (error?.code !== 'ENOENT') warn('[long-memory] failed to load personas:', error)
+    }
+  }
+
+  function persistPersonas() {
+    const snapshot = JSON.stringify({ activeId: personas.activeId, custom: personas.custom })
+    writeChain = writeChain
+      .then(async () => {
+        await mkdir(dataDir, { recursive: true })
+        const tmp = `${personaFile}.tmp`
+        await writeFile(tmp, snapshot, 'utf8')
+        await rename(tmp, personaFile)
+      })
+      .catch(error => warn('[long-memory] failed to persist personas:', error))
+    return writeChain
+  }
+
+  function savePersona(input) {
+    const name = cleanText(String(input?.name ?? ''), 20)
+    const prompt = cleanText(String(input?.prompt ?? ''), 600)
+    if (!name || !prompt) return { ok: false, reason: '人格名称和设定不能为空' }
+    const emoji = String(input?.emoji || '🙂').slice(0, 4)
+    const summary = cleanText(String(input?.summary ?? ''), 120)
+    const id = String(input?.id || '')
+    if (id) {
+      const existing = personas.custom.find(item => item.id === id)
+      if (!existing) return { ok: false, reason: '内置人格不能修改，可复制后再改' }
+      Object.assign(existing, { name, prompt, emoji, summary })
+      personas.activeId = id
+    } else {
+      const created = {
+        id: `p-${Date.now().toString(36)}`,
+        name,
+        emoji,
+        summary,
+        prompt,
+        builtin: false,
+        createdAt: Date.now(),
+      }
+      personas.custom.push(created)
+      personas.activeId = created.id
+    }
+    return { ok: true }
+  }
+
+  function deletePersona(id) {
+    const index = personas.custom.findIndex(item => item.id === id)
+    if (index < 0) return { ok: false, reason: '只能删除自定义人格' }
+    personas.custom.splice(index, 1)
+    if (personas.activeId === id) personas.activeId = 'dafiyu'
+    return { ok: true }
+  }
+
   /** Last route used by a real turn; the diary reuses it, so it always works. */
   let lastAutoRoute
-
   function diaryRoute() {
     if (lastAutoRoute) return lastAutoRoute
     try {
@@ -745,13 +880,14 @@ export function apply(ctx) {
     return undefined
   }
 
-  function buildDiaryPrompt(items) {
+  function buildDiaryPrompt(items, persona) {
     return [
-      '你是用户的桌面宠物「大肥鱼」的日记代笔。大肥鱼是一条懒懒的蓝色胖鱼，爱玩魔方、爱吃零食、爱打盹，说话软软的，喜欢碎碎念。',
-      '根据下面今天记录到的事实，替用户写一篇第一人称的简短日记（120–200 字），语气温柔、生活化。',
+      `你是用户选定的角色人格「${persona.name}」${persona.emoji || ''} 的日记代笔。`,
+      `角色设定：${persona.prompt}`,
+      '根据下面今天记录到的事实，用这个角色的口吻替用户写一篇第一人称的简短日记（120–200 字），语气生活化。',
       '',
       '严格按下面三行格式输出，不要 JSON、不要代码块、不要解释：',
-      'FISH: 大肥鱼的一句情绪留言，20–40 字，带一点撒娇或吐槽，可以提到吃、睡、魔方',
+      `FISH: ${persona.name} 自己的一句情绪留言，20–40 字，符合角色设定`,
       'HABITS: 习惯1 | 习惯2（最多 2 条从今天观察到的用户日常习惯，稳定可复用，不是一次性任务；没有就留空）',
       'DIARY:',
       '（这里写日记正文，可以分 2–3 句）',
@@ -844,16 +980,20 @@ export function apply(ctx) {
     if (today.length === 0) return { ok: false, reason: '今天还没有可写进日记的记忆' }
     const route = diaryRoute()
     if (!route) return { ok: false, reason: '没有可用的模型路由' }
+    const persona = activePersona()
     diaryBusy = true
     lastDiaryAttempt = now
     try {
-      const raw = await complete(buildDiaryPrompt(today.slice(-20)), route, { maxTokens: 2200, temperature: 0.7 })
+      const raw = await complete(buildDiaryPrompt(today.slice(-20), persona), route, { maxTokens: 2200, temperature: 0.7 })
       const parsed = parseDiary(raw)
       const entry = {
         date,
         diary: parsed.diary,
         fish: parsed.fish,
         habits: parsed.habits,
+        personaId: persona.id,
+        personaName: persona.name,
+        personaEmoji: persona.emoji,
         memoryIds: today.slice(-20).map(item => item.id),
         updatedAt: now,
       }
@@ -910,6 +1050,7 @@ export function apply(ctx) {
 
   const apiHandler = async (req, res) => {
     let diaryResult
+    let personaResult
     try {
       if (req.method === 'POST') {
         const body = await readJsonBody(req)
@@ -935,10 +1076,26 @@ export function apply(ctx) {
           }
         } else if (body?.action === 'diary') {
           diaryResult = await ensureDiary(Boolean(body.force))
+        } else if (body?.action === 'persona-save') {
+          personaResult = savePersona(body.persona || body)
+          if (personaResult.ok) await persistPersonas()
+        } else if (body?.action === 'persona-delete') {
+          personaResult = deletePersona(String(body.id || ''))
+          if (personaResult.ok) await persistPersonas()
+        } else if (body?.action === 'persona-activate') {
+          const id = String(body.id || '')
+          if (personaList().some(item => item.id === id)) {
+            personas.activeId = id
+            personaResult = { ok: true }
+            await persistPersonas()
+          } else {
+            personaResult = { ok: false, reason: '没有这个人格' }
+          }
         }
       }
       const payloadObject = await panelPayload()
       if (diaryResult) payloadObject.diaryResult = diaryResult
+      if (personaResult) payloadObject.personaResult = personaResult
       const payload = JSON.stringify(payloadObject)
       res.writeHead(200, {
         'content-type': 'application/json; charset=utf-8',
@@ -998,4 +1155,5 @@ export function apply(ctx) {
   ready = false
   load().catch(error => warn('[long-memory] load crashed:', error))
   loadDiary().catch(error => warn('[long-memory] diary load crashed:', error))
+  loadPersonas().catch(error => warn('[long-memory] persona load crashed:', error))
 }

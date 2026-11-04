@@ -8,6 +8,38 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ---
 
+## [0.4.0] — 2026-11-04
+
+### 新增
+
+- **人格系统**：面板新增「人格」数据表格（人格 / 类型 / 风格摘要 / 状态 / 操作），默认人格为「🐟 大肥鱼」。
+- 内置 6 种热门人格可直接启用：大肥鱼、傲娇猫娘、温柔学姐、毒舌管家、赛博黑客、佛系禅师。
+- 自定义人格：名称、emoji、风格摘要、角色设定；支持编辑、删除，以及把内置人格「复制」成可改的自定义人格。
+- 日记正文与留言按当前人格的设定生成，日记条目记录 `personaName` / `personaEmoji`，旧条目回退显示「大肥鱼」。
+- 人格数据存在 `personas.json`；内置人格随插件更新，自定义人格只存本地。
+
+### 变更
+
+- 面板标签由「记忆 / 日记」扩展为「记忆 / 日记 / 人格」。
+
+---
+
+## [0.4.0] — 2026-11-04
+
+### Added
+
+- **Persona system**: a new Personas tab renders a data table (persona / type / style summary / status / actions); the default persona is 「🐟 大肥鱼」.
+- Six built-in popular personas can be activated directly: 大肥鱼, 傲娇猫娘, 温柔学姐, 毒舌管家, 赛博黑客, 佛系禅师.
+- Custom personas: name, emoji, style summary and role prompt; edit, delete, or copy a built-in one into an editable custom persona.
+- Diary text and its comment are generated in the active persona's voice; entries record `personaName` / `personaEmoji`, older entries fall back to 「大肥鱼」.
+- Personas live in `personas.json`; built-ins ship with the plugin, custom ones stay local.
+
+### Changed
+
+- The panel tabs are now Memory / Diary / Personas.
+
+---
+
 ## [0.3.0] — 2026-11-03
 
 ### 新增
