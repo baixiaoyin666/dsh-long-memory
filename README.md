@@ -8,7 +8,7 @@
 每轮对话结束后自动提炼记忆，新会话自动带回；带详情面板、每日日记与可切换人格。</p>
 
 <p>
-  <img src="https://img.shields.io/badge/version-0.9.1-4aa8ff?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/github/v/release/baixiaoyin666/dsh-long-memory?style=flat-square&label=version&color=4aa8ff" alt="version" />
   <img src="https://img.shields.io/badge/license-MIT-3fb950?style=flat-square" alt="license" />
   <img src="https://img.shields.io/badge/DSH-0.2.x-5b6ef5?style=flat-square" alt="dsh" />
   <img src="https://img.shields.io/badge/category-memory-b08cff?style=flat-square" alt="category" />
