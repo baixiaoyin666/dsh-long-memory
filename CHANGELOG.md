@@ -8,6 +8,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ---
 
+## [0.9.1] — 2026-11-04
+
+### 变更
+
+- **情绪趋势改成表情**：最近 14 天每天一格，用 😊 😠 😢 😳 😕 😐 表示当天心情，无记录显示「·」，悬停显示「11月4日 周二 · 开心」。
+- **日期显示优化**：日记标题改为「今天 · 11月4日 周二」（昨天/更早自动切换前缀），右侧显示「更新于 10:32」而不是模糊的相对时间；趋势格下方显示日号。
+
+---
+
+## [0.9.1] — 2026-11-04
+
+### Changed
+
+- **Mood trend now uses faces**: one cell per day for the last 14 days, showing 😊 😠 😢 😳 😕 😐 for that day's mood, 「·」 when there is no entry, with a hover title like "11月4日 周二 · 开心".
+- **Better dates**: diary titles read "今天 · 11月4日 周二" (yesterday/earlier switch automatically), the right side shows "更新于 10:32" instead of a fuzzy relative time, and each trend cell carries its day number.
+
+---
+
 ## [0.9.0] — 2026-11-04
 
 ### 新增

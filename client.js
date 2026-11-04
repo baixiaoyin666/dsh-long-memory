@@ -37,6 +37,50 @@ window.__ModuleLoader__.load({
       confused: '#b08cff',
       daily: '#7ed6a5',
     }
+    const MOOD_EMOJI = { happy: '😊', angry: '😠', sad: '😢', shy: '😳', confused: '😕', daily: '😐' }
+    const MOOD_LABEL = { happy: '开心', angry: '生气', sad: '难过', shy: '害羞', confused: '困惑', daily: '日常' }
+    const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+    const MOOD_DAYS = 14
+
+    /** "今天 · 11月4日 周二" plus the update time, from a date key. */
+    function entryDateText(dateStr, updatedAt) {
+      const [year, month, day] = String(dateStr || '').split('-').map(Number)
+      const date = new Date(year || 1970, (month || 1) - 1, day || 1)
+      const now = new Date()
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      const diff = Math.round((today - date) / 86400000)
+      const prefix = diff === 0 ? '今天' : diff === 1 ? '昨天' : ''
+      const weekday = WEEKDAYS[date.getDay()]
+      const time = updatedAt
+        ? new Date(updatedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+        : ''
+      return {
+        title: `${prefix ? `${prefix} · ` : ''}${month}月${day}日 ${weekday}`,
+        updated: time ? `更新于 ${time}` : '',
+      }
+    }
+
+    /** Last MOOD_DAYS calendar days, each with its diary entry when present. */
+    function recentDays(entries) {
+      const byDate = new Map((entries || []).map(entry => [entry.date, entry]))
+      const days = []
+      const now = new Date()
+      for (let offset = MOOD_DAYS - 1; offset >= 0; offset -= 1) {
+        const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - offset)
+        const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+        const entry = byDate.get(key)
+        const mood = entry ? entry.mood || 'daily' : ''
+        days.push({
+          key,
+          entry,
+          mood,
+          color: MOOD_COLORS[mood] || C.line,
+          dayLabel: String(date.getDate()),
+          full: `${date.getMonth() + 1}月${date.getDate()}日 ${WEEKDAYS[date.getDay()]}`,
+        })
+      }
+      return days
+    }
 
     /** High-blur glass surface: translucent fill, backdrop blur, hairline edge. */
     function glass(extra) {
@@ -971,27 +1015,47 @@ window.__ModuleLoader__.load({
                 h(
                   'div',
                   { style: { fontSize: 11, color: C.faint, marginLeft: 'auto' } },
-                  entries
-                    .slice(0, 14)
-                    .map(entry => entry.mood || 'daily')
-                    .join(' · '),
+                  `最近 ${MOOD_DAYS} 天 · 共 ${entries.length} 篇日记`,
                 ),
               ),
               h(
                 'div',
-                { style: { display: 'flex', gap: 4, flexWrap: 'wrap' } },
-                entries.slice(0, 14).map(entry =>
-                  h('div', {
-                    key: entry.date,
-                    title: `${entry.date} · ${entry.mood || 'daily'}`,
-                    style: {
-                      width: 20,
-                      height: 20,
-                      borderRadius: 6,
-                      background: MOOD_COLORS[entry.mood] || MOOD_COLORS.daily,
-                      opacity: 0.85,
+                { style: { display: 'flex', gap: 6, flexWrap: 'wrap' } },
+                recentDays(entries).map(day =>
+                  h(
+                    'div',
+                    {
+                      key: day.key,
+                      title: `${day.full} · ${day.entry ? MOOD_LABEL[day.mood] || day.mood : '没有记录'}`,
+                      style: {
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: 3,
+                        width: 32,
+                      },
                     },
-                  }),
+                    h(
+                      'div',
+                      {
+                        style: {
+                          width: 30,
+                          height: 30,
+                          borderRadius: 10,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: 16,
+                          lineHeight: 1,
+                          background: day.entry ? `${day.color}22` : 'transparent',
+                          border: `1px solid ${day.entry ? day.color : C.line}`,
+                          opacity: day.entry ? 1 : 0.45,
+                        },
+                      },
+                      day.entry ? MOOD_EMOJI[day.mood] || '😐' : '·',
+                    ),
+                    h('div', { style: { fontSize: 9, color: C.faint } }, day.dayLabel),
+                  ),
                 ),
               ),
             )
@@ -1027,15 +1091,23 @@ window.__ModuleLoader__.load({
                 h(
                   'div',
                   { style: { display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 8, flexWrap: 'wrap' } },
-                  h('div', { style: { fontSize: 15, fontWeight: 600, color: C.ink } }, entry.date),
+                  h(
+                    'div',
+                    { style: { fontSize: 15, fontWeight: 600, color: C.ink } },
+                    entryDateText(entry.date, entry.updatedAt).title,
+                  ),
                   entry.mood
                     ? h(
                         Chip,
-                        { color: C.brand },
-                        `${entry.mood}`,
+                        { color: MOOD_COLORS[entry.mood] || C.brand },
+                        `${MOOD_EMOJI[entry.mood] || ''} ${MOOD_LABEL[entry.mood] || entry.mood}`,
                       )
                     : null,
-                  h('div', { style: { fontSize: 11, color: C.faint } }, `更新于 ${relTime(entry.updatedAt)}`),
+                  h(
+                    'div',
+                    { style: { fontSize: 11, color: C.faint } },
+                    entryDateText(entry.date, entry.updatedAt).updated || relTime(entry.updatedAt),
+                  ),
                   entry.emoji
                     ? h('div', { style: { fontSize: 16, letterSpacing: 4, marginLeft: 'auto' } }, entry.emoji)
                     : null,
