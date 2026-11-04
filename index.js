@@ -1074,11 +1074,16 @@ export function apply(ctx) {
       try {
         const meme = ctx.get('dshMeme')
         if (meme && typeof meme.pick === 'function') {
-          const result = meme.pick({ tag: parsed.mood })
-          if (result && result.ok) picked = result
+          for (const tag of [parsed.mood, 'daily', undefined]) {
+            const result = meme.pick(tag ? { tag } : {})
+            if (result && result.ok) {
+              picked = result
+              break
+            }
+          }
         }
       } catch {
-        /* dsh-meme is optional */
+        /* dsh-meme is optional; the panel falls back to its built-in mood card */
       }
       const entry = {
         date,

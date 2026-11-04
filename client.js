@@ -1220,7 +1220,32 @@ window.__ModuleLoader__.load({
                         boxShadow: '0 10px 28px rgba(0,0,0,0.25)',
                       },
                     })
-                  : null,
+                  : h(
+                      'div',
+                      {
+                        style: {
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 12,
+                          borderRadius: 12,
+                          margin: '0 0 10px',
+                          padding: '12px 16px',
+                          background: `linear-gradient(135deg, ${MOOD_COLORS[entry.mood] || MOOD_COLORS.daily}22, transparent 70%)`,
+                          border: `1px solid ${MOOD_COLORS[entry.mood] || MOOD_COLORS.daily}55`,
+                        },
+                      },
+                      h('div', { style: { fontSize: 38, lineHeight: 1 } }, MOOD_EMOJI[entry.mood] || '😐'),
+                      h(
+                        'div',
+                        { style: { fontSize: 12, color: C.sub, lineHeight: '18px' } },
+                        h(
+                          'div',
+                          { style: { fontWeight: 600, color: C.ink } },
+                          `${entry.personaName || '大肥鱼'} 的情绪卡 · ${MOOD_LABEL[entry.mood] || '日常'}`,
+                        ),
+                        h('div', null, '装了 dsh-meme 后这里会换成真实表情包'),
+                      ),
+                    ),
                 h(
                   'div',
                   {

@@ -8,6 +8,32 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ---
 
+## [0.10.1] — 2026-11-04
+
+### 修复
+
+- **没装 dsh-meme 的用户日记没有配图**：现在日记条目在取不到表情包时渲染内置「情绪卡」（按心情配色的 emoji 卡片），并提示安装 dsh-meme 可换成真实表情包。
+- 表情包挑选增加降级：按心情取图失败时依次尝试 `daily`、不限分类，再退回情绪卡。
+
+### 变更
+
+- 版本号 `0.10.0` → `0.10.1`。
+
+---
+
+## [0.10.1] — 2026-11-04
+
+### Fixed
+
+- **Users without dsh-meme saw no diary illustration**: entries now render a built-in mood card (an emoji card tinted by the day's mood) when no meme is available, with a hint that installing dsh-meme swaps in real images.
+- Meme selection degrades gracefully: it tries the mood tag, then `daily`, then any tag, before falling back to the mood card.
+
+### Changed
+
+- Version `0.10.0` → `0.10.1`.
+
+---
+
 ## [0.10.0] — 2026-11-04
 
 ### 新增
