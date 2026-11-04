@@ -8,6 +8,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ---
 
+## [0.9.0] — 2026-11-04
+
+### 新增
+
+- **敏感信息过滤**：写入记忆与来源对话前，自动把 GitHub token、`sk-`密钥、AWS key、Slack token、私钥块、身份证号、手机号、`密码: xxx` 等替换为 `[已脱敏]`，并在提炼错误时跳过。
+- **导出**：面板「导出 MD / JSON」两个链接，`GET /dsh-long-memory/data?export=markdown|json` 直接下载（Markdown 按全局/工作区/日记/人格分组，JSON 是完整备份）。
+- **情绪趋势**：日记页顶部一条最近 14 篇的情绪色块，按 happy/angry/sad/shy/confused/daily 着色。
+- **按工作区开关**：记忆页列出所有工作区，可单独「暂停记录」；暂停后该项目不再自动提炼（手动工具仍可用），状态存 `settings.json`。
+
+### 变更
+
+- 版本号 `0.8.0` → `0.9.0`。
+
+---
+
+## [0.9.0] — 2026-11-04
+
+### Added
+
+- **Secret scrubbing**: before anything is stored (memories and captured conversations), GitHub tokens, `sk-` keys, AWS keys, Slack tokens, private-key blocks, ID numbers, phone numbers and `password: …` are replaced with `[已脱敏]`; a turn whose extraction triggers a redaction is still stored, only scrubbed.
+- **Export**: "Export MD / JSON" links in the panel; `GET /dsh-long-memory/data?export=markdown|json` downloads a grouped Markdown journal or a full JSON backup.
+- **Mood trend**: a row of the last 14 diary moods coloured by happy/angry/sad/shy/confused/daily.
+- **Per-workspace switch**: the memory tab lists every workspace with a pause toggle; a paused workspace stops automatic distillation (manual tools still work), persisted in `settings.json`.
+
+### Changed
+
+- Version `0.8.0` → `0.9.0`.
+
+---
+
 ## [0.8.0] — 2026-11-04
 
 ### 新增

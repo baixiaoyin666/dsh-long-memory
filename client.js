@@ -29,6 +29,14 @@ window.__ModuleLoader__.load({
     }
 
     const LEVEL_COLOR = { ok: C.ok, warn: C.warn, error: C.err, info: C.sub }
+    const MOOD_COLORS = {
+      happy: '#4aa8ff',
+      angry: '#ff7a59',
+      sad: '#7a8cff',
+      shy: '#ff8ac2',
+      confused: '#b08cff',
+      daily: '#7ed6a5',
+    }
 
     /** High-blur glass surface: translucent fill, backdrop blur, hairline edge. */
     function glass(extra) {
@@ -333,6 +341,18 @@ window.__ModuleLoader__.load({
         [load],
       )
 
+      const toggleWorkspace = useCallback(
+        async (path, disabled) => {
+          await fetch(API, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ action: 'workspace-toggle', path, disabled }),
+          })
+          await load()
+        },
+        [load],
+      )
+
       const data = state.data
       const analysis = data && data.analysis
       const entries = data && data.entries ? data.entries : []
@@ -370,6 +390,28 @@ window.__ModuleLoader__.load({
             { style: { fontSize: 12, color: C.faint } },
             data ? `${analysis.total} 条 · 健康度 ${analysis.health}` : 'Long-term memory',
           ),
+          data
+            ? h(
+                'a',
+                {
+                  href: `${API}?export=markdown`,
+                  download: `dsh-long-memory-${new Date().toISOString().slice(0, 10)}.md`,
+                  style: { fontSize: 12, color: C.sub, textDecoration: 'none', marginLeft: 'auto' },
+                },
+                '导出 MD',
+              )
+            : null,
+          data
+            ? h(
+                'a',
+                {
+                  href: `${API}?export=json`,
+                  download: `dsh-long-memory-${new Date().toISOString().slice(0, 10)}.json`,
+                  style: { fontSize: 12, color: C.sub, textDecoration: 'none' },
+                },
+                'JSON',
+              )
+            : null,
           h(
             'button',
             {
@@ -379,7 +421,7 @@ window.__ModuleLoader__.load({
               onClick: load,
               disabled: busy,
               style: {
-                marginLeft: 'auto',
+                marginLeft: data ? 0 : 'auto',
                 fontSize: 12,
                 color: C.sub,
                 background: 'transparent',
@@ -542,6 +584,66 @@ window.__ModuleLoader__.load({
                           `+${data.lastRun.added ?? 0} 新增 / ${data.lastRun.merged ?? 0} 合并 · ${data.lastRun.ms ?? 0} ms`,
                         )
                       : h('span', null, String(data.lastRun.error || '').slice(0, 120)),
+                  )
+                : null,
+
+              analysis.workspaces.length
+                ? h(
+                    'div',
+                    {
+                      className: 'lm-glass lm-fade',
+                      style: glass({ borderRadius: 14, padding: '10px 14px', marginBottom: 12 }),
+                    },
+                    h(
+                      'div',
+                      { style: { fontSize: 12, color: C.sub, marginBottom: 6 } },
+                      '工作区记录开关（关闭后该项目不再自动提炼）',
+                    ),
+                    analysis.workspaces.map(workspace => {
+                      const disabled = ((data.settings && data.settings.disabledWorkspaces) || []).includes(workspace.path)
+                      return h(
+                        'div',
+                        {
+                          key: workspace.path,
+                          style: { display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0' },
+                        },
+                        h(
+                          'span',
+                          {
+                            title: workspace.path,
+                            style: {
+                              flex: 1,
+                              minWidth: 0,
+                              fontSize: 12,
+                              color: C.ink,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            },
+                          },
+                          workspace.path,
+                        ),
+                        h('span', { style: { fontSize: 11, color: C.faint, flex: 'none' } }, `${workspace.count} 条`),
+                        h(
+                          'button',
+                          {
+                            type: 'button',
+                            onClick: () => toggleWorkspace(workspace.path, !disabled),
+                            style: {
+                              flex: 'none',
+                              fontSize: 11,
+                              padding: '2px 9px',
+                              borderRadius: 999,
+                              border: `1px solid ${disabled ? C.err : C.ok}`,
+                              color: disabled ? C.err : C.ok,
+                              background: 'transparent',
+                              cursor: 'pointer',
+                            },
+                          },
+                          disabled ? '已暂停' : '记录中',
+                        ),
+                      )
+                    }),
                   )
                 : null,
 
@@ -852,6 +954,46 @@ window.__ModuleLoader__.load({
               'div',
               { style: { fontSize: 12, color: C.sub, marginBottom: 10 } },
               `这次没有生成新日记：${state.data.diaryResult.reason || '未知原因'}`,
+            )
+          : null,
+
+        entries.length
+          ? h(
+              'div',
+              {
+                className: 'lm-glass lm-fade',
+                style: glass({ borderRadius: 14, padding: '10px 12px', marginBottom: 12 }),
+              },
+              h(
+                'div',
+                { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 } },
+                h('div', { style: { fontSize: 12, color: C.sub } }, '最近情绪'),
+                h(
+                  'div',
+                  { style: { fontSize: 11, color: C.faint, marginLeft: 'auto' } },
+                  entries
+                    .slice(0, 14)
+                    .map(entry => entry.mood || 'daily')
+                    .join(' · '),
+                ),
+              ),
+              h(
+                'div',
+                { style: { display: 'flex', gap: 4, flexWrap: 'wrap' } },
+                entries.slice(0, 14).map(entry =>
+                  h('div', {
+                    key: entry.date,
+                    title: `${entry.date} · ${entry.mood || 'daily'}`,
+                    style: {
+                      width: 20,
+                      height: 20,
+                      borderRadius: 6,
+                      background: MOOD_COLORS[entry.mood] || MOOD_COLORS.daily,
+                      opacity: 0.85,
+                    },
+                  }),
+                ),
+              ),
             )
           : null,
 

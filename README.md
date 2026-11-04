@@ -62,11 +62,20 @@
 %DSH_HOME%\plugin-data\dsh-long-memory\      # Windows 默认 C:\Users\<你>\.dsh\...
 ~/.dsh/plugin-data/dsh-long-memory/          # macOS / Linux
 ├── memories.json    # 记忆库（可以直接用编辑器看，格式是普通 JSON）
+├── diary.json       # 每日日记：正文、心情、emoji、配图路径、习惯
+├── personas.json    # 自定义人格与当前启用的人格
+├── settings.json    # 暂停记录的工作区列表
 ├── last-run.json    # 最近一次提炼的明细：新增/合并条数、耗时、错误
 └── status.json      # 本次启动以来的计数：看到的轮数、成功/失败次数、最近错误
 ```
 
 `DSH_HOME` 环境变量可以覆盖根目录。删除 `memories.json` 等于清空全部记忆。
+
+**敏感信息**：写入前会过滤 GitHub token、`sk-` 密钥、AWS/Slack 凭据、私钥块、身份证号、手机号和 `密码: xxx`，替换成 `[已脱敏]`；来源对话同样处理。
+
+**导出**：面板上「导出 MD / JSON」两个链接，分别下载分组好的 Markdown 手帐和完整 JSON 备份。
+
+**按工作区暂停**：记忆页会列出所有工作区，可单独切到「已暂停」，之后该项目不再自动提炼（`memory_save` 等手动工具仍然可用）。
 
 **成本**：每完成一轮会多一次小请求（输入约 2k tokens，输出上限 700）；系统提示里多一段 ≤1400 字的摘要，且每个会话只计算一次，对缓存友好。
 

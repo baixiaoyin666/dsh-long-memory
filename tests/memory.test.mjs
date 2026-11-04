@@ -6,8 +6,16 @@ import {
   normalizeCwd,
   parseCandidates,
   prune,
+  scrub,
   similarity,
 } from '../lib/memory.js'
+
+// --- scrub ------------------------------------------------------------------
+assert.equal(scrub('token ghp_abcdefghijklmnopqrstuvwxyz012345').text.includes('ghp_'), false)
+assert.ok(scrub('密码: hunter2').text.includes('已脱敏'))
+assert.equal(scrub('普通的一句话').redactions, 0)
+assert.equal(scrub('手机号 13800138000').text.includes('13800138000'), false)
+assert.equal(scrub('ghp_abcdefghijklmnopqrstuvwxyz012345').redactions, 1)
 
 // --- normalizeCwd -----------------------------------------------------------
 assert.equal(normalizeCwd('E:\\Work\\Demo\\'), 'e:/work/demo')

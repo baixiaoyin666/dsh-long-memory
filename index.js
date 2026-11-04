@@ -210,6 +210,10 @@ export function apply(ctx) {
     const started = Date.now()
     const workspace = normalizeCwd(cwd)
     lastAutoRoute = route
+    if (workspaceDisabled(workspace)) {
+      await recordRun({ ok: false, sessionId, turn, workspace, reason: 'workspace disabled' })
+      return
+    }
     try {
       const raw = await complete(buildExtractPrompt(userText, assistantText), route)
       const candidates = parseCandidates(raw, MAX_CANDIDATES)
@@ -680,6 +684,7 @@ export function apply(ctx) {
       analysis: { ...analysis, health, issues },
       lastRun,
       diary: diary.entries.slice(0, 30),
+      settings: { disabledWorkspaces: settings.disabledWorkspaces },
       personas: {
         activeId: personas.activeId,
         list: personaList().map(item => {
@@ -877,6 +882,42 @@ export function apply(ctx) {
     personas.custom.splice(index, 1)
     if (personas.activeId === id) personas.activeId = 'dafiyu'
     return { ok: true }
+  }
+
+  // ---- settings: per-workspace recording switch --------------------------
+
+  const settingsFile = path.join(dataDir, 'settings.json')
+  const settings = { disabledWorkspaces: [] }
+
+  async function loadSettings() {
+    try {
+      const parsed = JSON.parse(await readFile(settingsFile, 'utf8'))
+      if (parsed && Array.isArray(parsed.disabledWorkspaces)) {
+        settings.disabledWorkspaces = parsed.disabledWorkspaces
+          .map(item => normalizeCwd(String(item || '')))
+          .filter(Boolean)
+      }
+    } catch (error) {
+      if (error?.code !== 'ENOENT') warn('[long-memory] failed to load settings:', error)
+    }
+  }
+
+  function persistSettings() {
+    const snapshot = JSON.stringify({ disabledWorkspaces: settings.disabledWorkspaces })
+    writeChain = writeChain
+      .then(async () => {
+        await mkdir(dataDir, { recursive: true })
+        const tmp = `${settingsFile}.tmp`
+        await writeFile(tmp, snapshot, 'utf8')
+        await rename(tmp, settingsFile)
+      })
+      .catch(error => warn('[long-memory] failed to persist settings:', error))
+    return writeChain
+  }
+
+  function workspaceDisabled(cwd) {
+    const key = normalizeCwd(cwd)
+    return Boolean(key) && settings.disabledWorkspaces.includes(key)
   }
 
   /** Last route used by a real turn; the diary reuses it, so it always works. */
@@ -1103,11 +1144,70 @@ export function apply(ctx) {
     })
   }
 
+  function exportMarkdown() {
+    const lines = ['# dsh-long-memory 导出', '', `生成时间：${new Date().toISOString()}`, '']
+    const globals = state.entries.filter(entry => entry.scope === 'global')
+    const locals = state.entries.filter(entry => entry.scope === 'workspace')
+    lines.push(`## 全局记忆（${globals.length}）`, '')
+    for (const entry of globals) {
+      lines.push(`- ${entry.text}${(entry.tags || []).length ? `  \`${entry.tags.join(' ')}\`` : ''}`)
+    }
+    lines.push('', `## 工作区记忆（${locals.length}）`, '')
+    const grouped = new Map()
+    for (const entry of locals) {
+      const key = entry.workspace || '（未记录）'
+      if (!grouped.has(key)) grouped.set(key, [])
+      grouped.get(key).push(entry)
+    }
+    for (const [workspace, items] of grouped) {
+      lines.push(`### ${workspace}`, '')
+      for (const entry of items) {
+        lines.push(`- ${entry.text}${(entry.tags || []).length ? `  \`${entry.tags.join(' ')}\`` : ''}`)
+      }
+      lines.push('')
+    }
+    lines.push(`## 日记（${diary.entries.length}）`, '')
+    for (const entry of diary.entries) {
+      const meta = [entry.date, entry.personaName, entry.mood].filter(Boolean).join(' · ')
+      lines.push(`### ${meta}`, '', entry.diary, '')
+      if (entry.fish) lines.push(`> ${entry.personaEmoji || '🐟'} ${entry.fish}`, '')
+      if ((entry.habits || []).length) lines.push(`习惯：${entry.habits.map(habit => habit.text).join(' · ')}`, '')
+      if (entry.emoji) lines.push(`表情：${entry.emoji}`, '')
+    }
+    lines.push(`## 人格（${personaList().length}）`, '')
+    for (const persona of personaList()) {
+      lines.push(`- ${persona.emoji} ${persona.name}（${persona.builtin ? '内置' : '自定义'}）${persona.summary ? `：${persona.summary}` : ''}`)
+    }
+    return `${lines.join('\n')}\n`
+  }
+
+  function exportJson() {
+    return {
+      exportedAt: new Date().toISOString(),
+      entries: state.entries,
+      diary: diary.entries,
+      personas: personaList(),
+      settings,
+    }
+  }
+
   const apiHandler = async (req, res) => {
     let diaryResult
     let personaResult
+    let settingsResult
     try {
       const requestUrl = new URL(req.url || '/', 'http://local')
+      const exportKind = requestUrl.searchParams.get('export')
+      if (exportKind === 'markdown' || exportKind === 'json') {
+        const body = exportKind === 'markdown' ? exportMarkdown() : JSON.stringify(exportJson(), null, 2)
+        res.writeHead(200, {
+          'content-type': exportKind === 'markdown' ? 'text/markdown; charset=utf-8' : 'application/json; charset=utf-8',
+          'content-disposition': `attachment; filename="dsh-long-memory-${dayKey()}.${exportKind === 'markdown' ? 'md' : 'json'}"`,
+          'cache-control': 'no-store',
+        })
+        res.end(body)
+        return
+      }
       const memeDate = requestUrl.searchParams.get('meme')
       if (memeDate) {
         const entry = diary.entries.find(item => item.date === memeDate)
@@ -1176,11 +1276,25 @@ export function apply(ctx) {
           } else {
             personaResult = { ok: false, reason: '没有这个人格' }
           }
+        } else if (body?.action === 'workspace-toggle') {
+          const key = normalizeCwd(String(body.path || ''))
+          if (key) {
+            const disabled = Boolean(body.disabled)
+            const set = new Set(settings.disabledWorkspaces)
+            if (disabled) set.add(key)
+            else set.delete(key)
+            settings.disabledWorkspaces = [...set]
+            await persistSettings()
+            settingsResult = { ok: true }
+          } else {
+            settingsResult = { ok: false, reason: '缺少工作区路径' }
+          }
         }
       }
       const payloadObject = await panelPayload()
       if (diaryResult) payloadObject.diaryResult = diaryResult
       if (personaResult) payloadObject.personaResult = personaResult
+      if (settingsResult) payloadObject.settingsResult = settingsResult
       const payload = JSON.stringify(payloadObject)
       res.writeHead(200, {
         'content-type': 'application/json; charset=utf-8',
@@ -1241,4 +1355,5 @@ export function apply(ctx) {
   load().catch(error => warn('[long-memory] load crashed:', error))
   loadDiary().catch(error => warn('[long-memory] diary load crashed:', error))
   loadPersonas().catch(error => warn('[long-memory] persona load crashed:', error))
+  loadSettings().catch(error => warn('[long-memory] settings load crashed:', error))
 }
