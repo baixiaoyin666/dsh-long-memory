@@ -30,6 +30,23 @@ window.__ModuleLoader__.load({
 
     const LEVEL_COLOR = { ok: C.ok, warn: C.warn, error: C.err, info: C.sub }
 
+    /** High-blur glass surface: translucent fill, backdrop blur, hairline edge. */
+    function glass(extra) {
+      return {
+        background: 'color-mix(in srgb, var(--dsw-alias-bg-layer-1) 52%, transparent)',
+        border: '1px solid color-mix(in srgb, var(--dsw-alias-border-l1) 65%, transparent)',
+        backdropFilter: 'blur(28px) saturate(165%)',
+        WebkitBackdropFilter: 'blur(28px) saturate(165%)',
+        boxShadow: '0 14px 44px rgba(0,0,0,0.24), inset 0 1px 0 rgba(255,255,255,0.10)',
+        ...(extra || {}),
+      }
+    }
+
+    const PAGE_BACKGROUND =
+      'radial-gradient(1100px 560px at 8% -12%, rgba(74,168,255,0.16), transparent 60%),' +
+      'radial-gradient(900px 520px at 108% 6%, rgba(176,140,255,0.14), transparent 55%),' +
+      'var(--dsw-alias-bg-base)'
+
     function relTime(ts) {
       if (!ts) return '—'
       const diff = Date.now() - ts
@@ -102,13 +119,7 @@ window.__ModuleLoader__.load({
       return h(
         'div',
         {
-          style: {
-            background: C.card,
-            border: `1px solid ${C.line}`,
-            borderRadius: 12,
-            padding: '12px 14px',
-            minWidth: 0,
-          },
+          style: glass({ borderRadius: 14, padding: '12px 14px', minWidth: 0 }),
         },
         h('div', { style: { fontSize: 12, color: C.sub, marginBottom: 6 } }, props.label),
         h('div', { style: { fontSize: 24, fontWeight: 600, lineHeight: 1.1, color: C.ink } }, props.value),
@@ -302,13 +313,11 @@ window.__ModuleLoader__.load({
               h(
                 'div',
                 {
-                  style: {
-                    background: C.card,
-                    border: `1px solid ${C.line}`,
-                    borderRadius: 12,
+                  style: glass({
+                    borderRadius: 14,
                     padding: '14px',
                     marginBottom: 12,
-                  },
+                  }),
                 },
                 h(
                   'div',
@@ -437,12 +446,7 @@ window.__ModuleLoader__.load({
               h(
                 'div',
                 {
-                  style: {
-                    border: `1px solid ${C.line}`,
-                    borderRadius: 12,
-                    overflow: 'hidden',
-                    background: C.card,
-                  },
+                  style: glass({ borderRadius: 14, overflow: 'hidden' }),
                 },
                 filtered.length === 0
                   ? h(
@@ -725,13 +729,11 @@ window.__ModuleLoader__.load({
                 'div',
                 {
                   key: entry.date,
-                  style: {
-                    border: `1px solid ${C.line}`,
-                    borderRadius: 12,
-                    background: C.card,
+                  style: glass({
+                    borderRadius: 14,
                     padding: '14px 16px',
                     marginBottom: 12,
-                  },
+                  }),
                 },
                 h(
                   'div',
@@ -872,7 +874,7 @@ window.__ModuleLoader__.load({
             {
               type: 'button',
               onClick: () =>
-                setEditing({ id: '', name: '', emoji: '🙂', summary: '', prompt: '' }),
+                setEditing({ id: '', name: '', emoji: '🙂', accent: '#8b7cf6', summary: '', prompt: '' }),
               style: {
                 marginLeft: 'auto',
                 fontSize: 12,
@@ -894,7 +896,7 @@ window.__ModuleLoader__.load({
         // data table
         h(
           'div',
-          { style: { border: `1px solid ${C.line}`, borderRadius: 12, overflow: 'hidden', background: C.card } },
+          { style: glass({ borderRadius: 14, overflow: 'hidden' }) },
           h(
             'table',
             { style: { width: '100%', borderCollapse: 'collapse' } },
@@ -907,6 +909,8 @@ window.__ModuleLoader__.load({
                 h('th', { style: head }, '人格'),
                 h('th', { style: head }, '类型'),
                 h('th', { style: head }, '风格摘要'),
+                h('th', { style: head }, '日记'),
+                h('th', { style: head }, '最近使用'),
                 h('th', { style: head }, '状态'),
                 h('th', { style: { ...head, textAlign: 'right' } }, '操作'),
               ),
@@ -921,11 +925,28 @@ window.__ModuleLoader__.load({
                   h(
                     'td',
                     { style: cell },
+                    h('span', {
+                      style: {
+                        display: 'inline-block',
+                        width: 8,
+                        height: 8,
+                        borderRadius: 999,
+                        background: persona.accent || '#8b7cf6',
+                        marginRight: 8,
+                        boxShadow: `0 0 10px ${persona.accent || '#8b7cf6'}66`,
+                      },
+                    }),
                     h('span', { style: { marginRight: 6 } }, persona.emoji || '🙂'),
                     h('span', { style: { fontWeight: persona.id === personas.activeId ? 600 : 400 } }, persona.name),
                   ),
                   h('td', { style: { ...cell, color: C.sub } }, persona.builtin ? '内置' : '自定义'),
-                  h('td', { style: { ...cell, color: C.sub, maxWidth: 360, lineHeight: '19px' } }, persona.summary || '—'),
+                  h('td', { style: { ...cell, color: C.sub, maxWidth: 320, lineHeight: '19px' } }, persona.summary || '—'),
+                  h('td', { style: { ...cell, color: C.sub } }, `${persona.diaryCount || 0} 篇`),
+                  h(
+                    'td',
+                    { style: { ...cell, color: C.faint } },
+                    persona.lastUsedAt ? relTime(persona.lastUsedAt) : '—',
+                  ),
                   h(
                     'td',
                     { style: cell },
@@ -970,6 +991,7 @@ window.__ModuleLoader__.load({
                                 id: '',
                                 name: `${persona.name} 副本`,
                                 emoji: persona.emoji,
+                                accent: persona.accent,
                                 summary: persona.summary,
                                 prompt: persona.prompt,
                               }),
@@ -999,18 +1021,16 @@ window.__ModuleLoader__.load({
           ? h(
               'div',
               {
-                style: {
+                style: glass({
                   marginTop: 12,
-                  border: `1px solid ${C.line}`,
-                  borderRadius: 12,
-                  background: C.card,
+                  borderRadius: 14,
                   padding: '14px',
-                },
+                }),
               },
               h('div', { style: { fontSize: 13, fontWeight: 600, marginBottom: 10 } }, editing.id ? '编辑人格' : '新建人格'),
               h(
                 'div',
-                { style: { display: 'flex', gap: 8, marginBottom: 8 } },
+                { style: { display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' } },
                 h('input', {
                   value: editing.name,
                   placeholder: '名称，如「毒舌管家」',
@@ -1022,6 +1042,22 @@ window.__ModuleLoader__.load({
                   placeholder: '🙂',
                   onChange: event => setEditing({ ...editing, emoji: event.target.value }),
                   style: { ...inputStyle, width: 64, flex: 'none' },
+                }),
+                h('input', {
+                  type: 'color',
+                  value: editing.accent || '#8b7cf6',
+                  title: '人格强调色',
+                  onChange: event => setEditing({ ...editing, accent: event.target.value }),
+                  style: {
+                    width: 40,
+                    height: 34,
+                    padding: 0,
+                    border: `1px solid color-mix(in srgb, ${C.line} 65%, transparent)`,
+                    borderRadius: 8,
+                    background: 'transparent',
+                    cursor: 'pointer',
+                    flex: 'none',
+                  },
                 }),
               ),
               h('input', {
@@ -1147,7 +1183,7 @@ window.__ModuleLoader__.load({
             height: '100%',
             overflowY: 'auto',
             boxSizing: 'border-box',
-            background: 'var(--dsw-alias-bg-base)',
+            background: PAGE_BACKGROUND,
             padding: '28px 32px 40px',
           },
         },

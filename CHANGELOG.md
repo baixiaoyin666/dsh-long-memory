@@ -8,6 +8,34 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ---
 
+## [0.5.0] — 2026-11-04
+
+### 变更
+
+- **视觉改成高模糊玻璃质感**：面板改用半透明卡片（`backdrop-filter: blur(28px) saturate(165%)`）、细描边与内高光，页面叠加柔和的蓝紫渐变，跟随主题明暗。
+- 统计卡、健康度区、记忆列表、日记卡片、人格表格与编辑器统一使用玻璃材质。
+
+### 新增
+
+- **人格数据表格增强**：新增「日记」篇数与「最近使用」两列，每行显示该人格的强调色圆点。
+- 人格增加**强调色**：内置 6 个人格各有配色，自定义人格可在编辑器里用取色器设置。
+
+---
+
+## [0.5.0] — 2026-11-04
+
+### Changed
+
+- **High-blur glass visuals**: the panel now uses translucent cards (`backdrop-filter: blur(28px) saturate(165%)`), hairline borders and inner highlights, over a soft blue/violet gradient that follows the active theme.
+- Stat cards, the health block, the memory list, diary cards, the persona table and the editor all share the glass surface.
+
+### Added
+
+- **Richer persona table**: new "diary" and "last used" columns, plus an accent-colour dot per row.
+- Personas gained an **accent colour**: the six built-ins ship with their own, and custom personas can pick one in the editor.
+
+---
+
 ## [0.4.0] — 2026-11-04
 
 ### 新增

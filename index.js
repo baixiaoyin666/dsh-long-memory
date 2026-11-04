@@ -680,7 +680,19 @@ export function apply(ctx) {
       analysis: { ...analysis, health, issues },
       lastRun,
       diary: diary.entries.slice(0, 30),
-      personas: { activeId: personas.activeId, list: personaList() },
+      personas: {
+        activeId: personas.activeId,
+        list: personaList().map(item => {
+          const used = diary.entries.filter(
+            entry => entry.personaId === item.id || (!entry.personaId && item.id === 'dafiyu'),
+          )
+          return {
+            ...item,
+            diaryCount: used.length,
+            lastUsedAt: used.reduce((max, entry) => Math.max(max, entry.updatedAt || 0), 0),
+          }
+        }),
+      },
       entries: [...state.entries].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)),
     }
   }
@@ -731,6 +743,7 @@ export function apply(ctx) {
       id: 'dafiyu',
       name: '大肥鱼',
       emoji: '🐟',
+      accent: '#4aa8ff',
       summary: '懒懒的蓝色胖鱼，爱魔方、零食和打盹，说话软软地碎碎念。',
       prompt: '你是一条懒懒的蓝色胖鱼，爱玩魔方、爱吃零食、爱打盹，说话软软的，喜欢碎碎念，偶尔撒个娇。',
       builtin: true,
@@ -739,6 +752,7 @@ export function apply(ctx) {
       id: 'tsundere-cat',
       name: '傲娇猫娘',
       emoji: '🐱',
+      accent: '#ff8ac2',
       summary: '嘴硬心软，嘴上嫌弃，其实一直陪着。',
       prompt: '你是一只傲娇的猫娘，嘴上喜欢嫌弃和吐槽，其实很关心用户，被夸会害羞，说话带一点点尾音。',
       builtin: true,
@@ -747,6 +761,7 @@ export function apply(ctx) {
       id: 'gentle-senpai',
       name: '温柔学姐',
       emoji: '🌷',
+      accent: '#7ed6a5',
       summary: '耐心温柔，会肯定努力，也会提醒休息。',
       prompt: '你是一位温柔的学姐，说话耐心、轻声细语，会肯定用户的努力，并温柔地提醒他休息和吃饭。',
       builtin: true,
@@ -755,6 +770,7 @@ export function apply(ctx) {
       id: 'sharp-butler',
       name: '毒舌管家',
       emoji: '🎩',
+      accent: '#b08cff',
       summary: '礼貌得体，吐槽一针见血，刀子嘴豆腐心。',
       prompt: '你是一位举止得体的管家，用词客气但吐槽精准一针见血，刀子嘴豆腐心，最后总会默默帮忙。',
       builtin: true,
@@ -763,6 +779,7 @@ export function apply(ctx) {
       id: 'cyber-hacker',
       name: '赛博黑客',
       emoji: '🛰️',
+      accent: '#49e0d0',
       summary: '极客冷幽默，三句话不离系统和数据。',
       prompt: '你是一个赛博朋克风格的黑客，说话简短、冷幽默，喜欢用系统、数据、日志之类的比喻，偶尔冒一句命令行梗。',
       builtin: true,
@@ -771,6 +788,7 @@ export function apply(ctx) {
       id: 'zen-monk',
       name: '佛系禅师',
       emoji: '🍵',
+      accent: '#d9b36a',
       summary: '平静克制，话短，带一点禅意。',
       prompt: '你是一位佛系禅师，说话平静克制、句子短，带一点禅意，不催促，只陪用户把今天放下。',
       builtin: true,
@@ -797,6 +815,7 @@ export function apply(ctx) {
             id: item.id,
             name: String(item.name).slice(0, 20),
             emoji: String(item.emoji || '🙂').slice(0, 4),
+            accent: /^#[0-9a-f]{6}$/i.test(String(item.accent || '')) ? item.accent : '#8b7cf6',
             summary: String(item.summary || '').slice(0, 120),
             prompt: String(item.prompt || '').slice(0, 600),
             builtin: false,
@@ -828,17 +847,19 @@ export function apply(ctx) {
     if (!name || !prompt) return { ok: false, reason: '人格名称和设定不能为空' }
     const emoji = String(input?.emoji || '🙂').slice(0, 4)
     const summary = cleanText(String(input?.summary ?? ''), 120)
+    const accent = /^#[0-9a-f]{6}$/i.test(String(input?.accent || '')) ? input.accent : '#8b7cf6'
     const id = String(input?.id || '')
     if (id) {
       const existing = personas.custom.find(item => item.id === id)
       if (!existing) return { ok: false, reason: '内置人格不能修改，可复制后再改' }
-      Object.assign(existing, { name, prompt, emoji, summary })
+      Object.assign(existing, { name, prompt, emoji, summary, accent })
       personas.activeId = id
     } else {
       const created = {
         id: `p-${Date.now().toString(36)}`,
         name,
         emoji,
+        accent,
         summary,
         prompt,
         builtin: false,
