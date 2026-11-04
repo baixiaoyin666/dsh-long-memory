@@ -8,6 +8,34 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ---
 
+## [0.6.0] — 2026-11-04
+
+### 新增
+
+- **与玻璃质感配套的交互动效**（纯 CSS，无动画库）：
+  - 玻璃卡片悬停上浮 2px、阴影加深；
+  - 记忆与人格表格行悬停高亮（品牌色 9% 叠加）；
+  - 按钮悬浮上移、按下缩放，标签页悬浮微抬；
+  - 输入框聚焦时出现品牌色光环；
+  - 统计卡/健康度/列表/日记/人格编辑器淡入上浮（300ms，缓动曲线）；
+  - 人格强调色圆点带呼吸光。
+
+---
+
+## [0.6.0] — 2026-11-04
+
+### Added
+
+- **Interaction motion matched to the glass surfaces** (plain CSS, no animation library):
+  - glass cards lift 2px and deepen their shadow on hover;
+  - memory and persona table rows highlight on hover (9% brand tint);
+  - buttons lift on hover and scale down on press; tabs lift slightly;
+  - inputs show a brand-coloured focus ring;
+  - stat cards, the health block, lists, diary cards and the persona editor fade up (300ms easing);
+  - persona accent dots carry a slow breathing glow.
+
+---
+
 ## [0.5.0] — 2026-11-04
 
 ### 变更

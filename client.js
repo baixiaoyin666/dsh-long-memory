@@ -65,6 +65,27 @@ window.__ModuleLoader__.load({
       return bare ? `${bare.slice(0, 8)}…${bare.slice(-4)}` : '—'
     }
 
+    const MOTION_CSS = `
+      @keyframes lm-fade-up { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: translateY(0) } }
+      @keyframes lm-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(255,255,255,0) } 50% { box-shadow: 0 0 12px 2px var(--lm-accent, rgba(255,255,255,0.35)) } }
+      .lm-fade { animation: lm-fade-up .3s cubic-bezier(.2,.7,.3,1) both }
+      .lm-glass { transition: transform .24s cubic-bezier(.2,.7,.3,1), box-shadow .24s ease, border-color .24s ease, background .24s ease }
+      .lm-glass:hover { transform: translateY(-2px) }
+      .lm-row { transition: background .18s ease, box-shadow .18s ease }
+      .lm-row:hover { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 9%, transparent) }
+      .lm-btn { transition: transform .16s ease, box-shadow .16s ease, opacity .16s ease }
+      .lm-btn:hover:not(:disabled) { transform: translateY(-1px) }
+      .lm-btn:active:not(:disabled) { transform: translateY(0) scale(.97) }
+      .lm-tab { transition: transform .18s ease, border-color .18s ease, color .18s ease, box-shadow .18s ease }
+      .lm-tab:hover { transform: translateY(-1px) }
+      .lm-focus:focus { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--dsw-alias-brand-primary) 26%, transparent) }
+      .lm-dot { animation: lm-pulse 3.6s ease-in-out infinite }
+    `
+
+    function Motion() {
+      return h('style', { dangerouslySetInnerHTML: { __html: MOTION_CSS } })
+    }
+
     async function readJson(response) {
       const text = await response.text()
       if (!text) throw new Error(`HTTP ${response.status}：响应为空（面板路由未注册）`)
@@ -119,6 +140,7 @@ window.__ModuleLoader__.load({
       return h(
         'div',
         {
+          className: 'lm-glass lm-fade',
           style: glass({ borderRadius: 14, padding: '12px 14px', minWidth: 0 }),
         },
         h('div', { style: { fontSize: 12, color: C.sub, marginBottom: 6 } }, props.label),
@@ -255,6 +277,7 @@ window.__ModuleLoader__.load({
             'button',
             {
               type: 'button',
+              className: 'lm-btn',
               onClick: load,
               disabled: busy,
               style: {
@@ -313,6 +336,7 @@ window.__ModuleLoader__.load({
               h(
                 'div',
                 {
+                  className: 'lm-glass lm-fade',
                   style: glass({
                     borderRadius: 14,
                     padding: '14px',
@@ -409,6 +433,7 @@ window.__ModuleLoader__.load({
                 'div',
                 { style: { display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' } },
                 h('input', {
+                  className: 'lm-focus',
                   value: query,
                   onChange: event => setQuery(event.target.value),
                   placeholder: '搜索记忆内容或标签…',
@@ -446,6 +471,7 @@ window.__ModuleLoader__.load({
               h(
                 'div',
                 {
+                  className: 'lm-glass lm-fade',
                   style: glass({ borderRadius: 14, overflow: 'hidden' }),
                 },
                 filtered.length === 0
@@ -461,6 +487,7 @@ window.__ModuleLoader__.load({
                         'div',
                         {
                           key: entry.id,
+                          className: 'lm-row',
                           style: {
                             padding: '10px 12px',
                             borderTop: index === 0 ? 'none' : `1px solid ${C.line}`,
@@ -681,6 +708,7 @@ window.__ModuleLoader__.load({
             'button',
             {
               type: 'button',
+              className: 'lm-btn',
               disabled: busy,
               onClick: () => load(true),
               style: {
@@ -729,6 +757,7 @@ window.__ModuleLoader__.load({
                 'div',
                 {
                   key: entry.date,
+                  className: 'lm-glass lm-fade',
                   style: glass({
                     borderRadius: 14,
                     padding: '14px 16px',
@@ -873,6 +902,7 @@ window.__ModuleLoader__.load({
             'button',
             {
               type: 'button',
+              className: 'lm-btn',
               onClick: () =>
                 setEditing({ id: '', name: '', emoji: '🙂', accent: '#8b7cf6', summary: '', prompt: '' }),
               style: {
@@ -896,7 +926,7 @@ window.__ModuleLoader__.load({
         // data table
         h(
           'div',
-          { style: glass({ borderRadius: 14, overflow: 'hidden' }) },
+          { className: 'lm-glass lm-fade', style: glass({ borderRadius: 14, overflow: 'hidden' }) },
           h(
             'table',
             { style: { width: '100%', borderCollapse: 'collapse' } },
@@ -921,7 +951,7 @@ window.__ModuleLoader__.load({
               list.map(persona =>
                 h(
                   'tr',
-                  { key: persona.id, style: { borderTop: `1px solid ${C.line}` } },
+                  { key: persona.id, className: 'lm-row', style: { borderTop: `1px solid ${C.line}` } },
                   h(
                     'td',
                     { style: cell },
@@ -1021,6 +1051,7 @@ window.__ModuleLoader__.load({
           ? h(
               'div',
               {
+                className: 'lm-glass lm-fade',
                 style: glass({
                   marginTop: 12,
                   borderRadius: 14,
@@ -1097,6 +1128,7 @@ window.__ModuleLoader__.load({
                   'button',
                   {
                     type: 'button',
+                    className: 'lm-btn',
                     disabled: busy,
                     onClick: async () => {
                       await send({ action: 'persona-save', persona: editing })
@@ -1135,12 +1167,13 @@ window.__ModuleLoader__.load({
       return h(
         'div',
         null,
+        h(Motion, null),
         h(
           'div',
           { style: { display: 'flex', gap: 6, marginBottom: 12 } },
-          h('button', { type: 'button', onClick: () => setTab('memory'), style: tabStyle(tab === 'memory') }, '记忆'),
-          h('button', { type: 'button', onClick: () => setTab('diary'), style: tabStyle(tab === 'diary') }, '日记'),
-          h('button', { type: 'button', onClick: () => setTab('persona'), style: tabStyle(tab === 'persona') }, '人格'),
+          h('button', { type: 'button', className: 'lm-tab', onClick: () => setTab('memory'), style: tabStyle(tab === 'memory') }, '记忆'),
+          h('button', { type: 'button', className: 'lm-tab', onClick: () => setTab('diary'), style: tabStyle(tab === 'diary') }, '日记'),
+          h('button', { type: 'button', className: 'lm-tab', onClick: () => setTab('persona'), style: tabStyle(tab === 'persona') }, '人格'),
         ),
         tab === 'memory' ? h(Panel, { compact: false }) : null,
         tab === 'diary' ? h(DiaryView, null) : null,
