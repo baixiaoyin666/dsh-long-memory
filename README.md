@@ -1,8 +1,23 @@
-# dsh-long-memory
+<div align="center">
 
-给 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的**自动长期记忆**插件：每轮对话结束后自动提炼值得跨会话记住的事实，新会话自动带回来。
+<img src="https://raw.githubusercontent.com/baixiaoyin666/dsh-long-memory/main/icon.svg" width="132" height="132" alt="dsh-long-memory" />
 
-[English](#english) · [更新日志](CHANGELOG.md)
+<h1>dsh-long-memory</h1>
+
+<p><b>DeepSeek Harness 的自动长期记忆插件</b><br />
+每轮对话结束后自动提炼记忆，新会话自动带回；带详情面板、每日日记与可切换人格。</p>
+
+<p>
+  <img src="https://img.shields.io/badge/version-0.9.1-4aa8ff?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/license-MIT-3fb950?style=flat-square" alt="license" />
+  <img src="https://img.shields.io/badge/DSH-0.2.x-5b6ef5?style=flat-square" alt="dsh" />
+  <img src="https://img.shields.io/badge/category-memory-b08cff?style=flat-square" alt="category" />
+  <img src="https://img.shields.io/badge/awesome--dsh--plugin-listed-ff8ac2?style=flat-square" alt="listed" />
+</p>
+
+<p><b>中文</b> · <a href="#english">English</a> · <a href="CHANGELOG.md">更新日志</a> · <a href="https://github.com/baixiaoyin666/dsh-long-memory/releases">Releases</a></p>
+
+</div>
 
 ---
 
