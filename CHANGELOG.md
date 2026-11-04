@@ -8,6 +8,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ---
 
+## [0.8.0] — 2026-11-04
+
+### 新增
+
+- **日记改成真实写作**：每篇 300–420 字、2–3 段，强调具体场景与细节、有起承转合，不再罗列事实；模型输出增加 `MOOD:` 与 `EMOJI:` 两行。
+- **表情**：日记带情绪标签（happy/angry/sad/shy/confused/daily）与 2–3 个 emoji。
+- **配图**：装了 [dsh-meme](https://github.com/yyh-001/dsh-meme) 时，按情绪调用其只读服务 `ctx.get('dshMeme').pick({ tag })` 选一张图，路径记录在日记条目里，由本插件 `data?meme=<date>` 路由直接读文件返回（不依赖外部图床）。
+- **人格独立界面**：点「新建/编辑」进入独立编辑页，人格列表暂时隐藏，左上角「← 返回人格列表」回到表格。
+
+### 变更
+
+- 日记生成 token 上限 2200 → 2600，正文上限 1200 → 2000 字。
+
+---
+
 ## [0.7.0] — 2026-11-04
 
 ### 新增

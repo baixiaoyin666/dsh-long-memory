@@ -905,19 +905,24 @@ export function apply(ctx) {
     return [
       `你是用户选定的角色人格「${persona.name}」${persona.emoji || ''} 的日记代笔。`,
       `角色设定：${persona.prompt}`,
-      '根据下面今天记录到的事实，用这个角色的口吻替用户写一篇第一人称的简短日记（120–200 字），语气生活化。',
+      '根据下面今天记录到的事实，用这个角色的口吻替用户写一篇第一人称日记，300–420 字，2–3 个自然段。',
+      '写作要求：像真正的人在写日记——具体的场景、动作、时间和细节，有起承转合和一句收束；不要罗列事实，不要小标题，不要“今天完成了以下事项”这种汇报腔。',
       '',
-      '严格按下面三行格式输出，不要 JSON、不要代码块、不要解释：',
+      '严格按下面五行格式输出，不要 JSON、不要代码块、不要解释：',
       `FISH: ${persona.name} 自己的一句情绪留言，20–40 字，符合角色设定`,
       'HABITS: 习惯1 | 习惯2（最多 2 条从今天观察到的用户日常习惯，稳定可复用，不是一次性任务；没有就留空）',
+      'MOOD: happy | angry | sad | shy | confused | daily 里选一个，代表今天整体的情绪',
+      'EMOJI: 2–3 个贴合的 emoji，用空格分隔，例如 😊 ✨ 🌙',
       'DIARY:',
-      '（这里写日记正文，可以分 2–3 句）',
+      '（这里写日记正文）',
       '',
       `【日期】${dayKey()}`,
       '【今天的事实】',
       ...items.map((item, index) => `${index + 1}. [${item.scope === 'global' ? '全局' : '项目'}] ${item.text}`),
     ].join('\n')
   }
+
+  const MOODS = ['happy', 'angry', 'sad', 'shy', 'confused', 'daily']
 
   const FISH_LINES = [
     '今天也辛苦啦，我先趴一会儿，有事叫我～',
@@ -934,9 +939,11 @@ export function apply(ctx) {
       .trim()
     if (!source) throw new Error('empty diary response (模型没有返回文本)')
 
-    // Preferred form: FISH: … / HABITS: … / DIARY: …
+    // Preferred form: FISH: … / HABITS: … / MOOD: … / EMOJI: … / DIARY: …
     const fishMatch = source.match(/^[ \t]*FISH[ \t]*[:：][ \t]*(.+)$/im)
     const habitsMatch = source.match(/^[ \t]*HABITS[ \t]*[:：][ \t]*(.*)$/im)
+    const moodMatch = source.match(/^[ \t]*MOOD[ \t]*[:：][ \t]*([a-z]+)/im)
+    const emojiMatch = source.match(/^[ \t]*EMOJI[ \t]*[:：][ \t]*(.+)$/im)
     const diaryAt = source.search(/^[ \t]*DIARY[ \t]*[:：]/im)
 
     let body
@@ -945,10 +952,19 @@ export function apply(ctx) {
     } else {
       body = source
         .split(/\r?\n/)
-        .filter(line => !/^[ \t]*(FISH|HABITS)[ \t]*[:：]/i.test(line))
+        .filter(line => !/^[ \t]*(FISH|HABITS|MOOD|EMOJI)[ \t]*[:：]/i.test(line))
         .join('\n')
     }
-    body = cleanText(body, 1200)
+    body = cleanText(body, 2000)
+
+    const mood = moodMatch && MOODS.includes(moodMatch[1].toLowerCase()) ? moodMatch[1].toLowerCase() : 'daily'
+    const emoji = emojiMatch
+      ? emojiMatch[1]
+          .split(/\s+/)
+          .filter(Boolean)
+          .slice(0, 4)
+          .join(' ')
+      : ''
 
     const habits = habitsMatch
       ? habitsMatch[1]
@@ -974,6 +990,8 @@ export function apply(ctx) {
               diary: text,
               fish: cleanText(String(parsed?.fish ?? ''), 200) || fallbackFish,
               habits,
+              mood,
+              emoji,
             }
           }
         } catch {
@@ -987,6 +1005,8 @@ export function apply(ctx) {
       diary: body,
       fish: fishMatch ? cleanText(fishMatch[1], 200) : fallbackFish,
       habits,
+      mood,
+      emoji,
     }
   }
 
@@ -1005,13 +1025,27 @@ export function apply(ctx) {
     diaryBusy = true
     lastDiaryAttempt = now
     try {
-      const raw = await complete(buildDiaryPrompt(today.slice(-20), persona), route, { maxTokens: 2200, temperature: 0.7 })
+      const raw = await complete(buildDiaryPrompt(today.slice(-20), persona), route, { maxTokens: 2600, temperature: 0.75 })
       const parsed = parseDiary(raw)
+      let picked
+      try {
+        const meme = ctx.get('dshMeme')
+        if (meme && typeof meme.pick === 'function') {
+          const result = meme.pick({ tag: parsed.mood })
+          if (result && result.ok) picked = result
+        }
+      } catch {
+        /* dsh-meme is optional */
+      }
       const entry = {
         date,
         diary: parsed.diary,
         fish: parsed.fish,
         habits: parsed.habits,
+        mood: parsed.mood,
+        emoji: parsed.emoji,
+        memePath: picked?.path || '',
+        memeCaption: picked?.caption || '',
         personaId: persona.id,
         personaName: persona.name,
         personaEmoji: persona.emoji,
@@ -1073,6 +1107,36 @@ export function apply(ctx) {
     let diaryResult
     let personaResult
     try {
+      const requestUrl = new URL(req.url || '/', 'http://local')
+      const memeDate = requestUrl.searchParams.get('meme')
+      if (memeDate) {
+        const entry = diary.entries.find(item => item.date === memeDate)
+        if (!entry || !entry.memePath) {
+          res.writeHead(404, { 'content-type': 'text/plain' })
+          res.end('no meme')
+          return
+        }
+        try {
+          const bytes = await readFile(entry.memePath)
+          const ext = path.extname(entry.memePath).toLowerCase()
+          const type =
+            ext === '.png'
+              ? 'image/png'
+              : ext === '.gif'
+                ? 'image/gif'
+                : ext === '.webp'
+                  ? 'image/webp'
+                  : ext === '.svg'
+                    ? 'image/svg+xml'
+                    : 'image/jpeg'
+          res.writeHead(200, { 'content-type': type, 'cache-control': 'public, max-age=3600' })
+          res.end(bytes)
+        } catch {
+          res.writeHead(404)
+          res.end()
+        }
+        return
+      }
       if (req.method === 'POST') {
         const body = await readJsonBody(req)
         if (body?.action === 'forget') {

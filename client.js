@@ -884,16 +884,45 @@ window.__ModuleLoader__.load({
                 },
                 h(
                   'div',
-                  { style: { display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 8 } },
+                  { style: { display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 8, flexWrap: 'wrap' } },
                   h('div', { style: { fontSize: 15, fontWeight: 600, color: C.ink } }, entry.date),
+                  entry.mood
+                    ? h(
+                        Chip,
+                        { color: C.brand },
+                        `${entry.mood}`,
+                      )
+                    : null,
                   h('div', { style: { fontSize: 11, color: C.faint } }, `更新于 ${relTime(entry.updatedAt)}`),
+                  entry.emoji
+                    ? h('div', { style: { fontSize: 16, letterSpacing: 4, marginLeft: 'auto' } }, entry.emoji)
+                    : null,
                 ),
+                entry.memePath
+                  ? h('img', {
+                      src: `${API}?meme=${encodeURIComponent(entry.date)}`,
+                      alt: entry.memeCaption || '配图',
+                      title: entry.memeCaption || '',
+                      loading: 'lazy',
+                      onError: event => {
+                        event.currentTarget.style.display = 'none'
+                      },
+                      style: {
+                        display: 'block',
+                        maxWidth: '100%',
+                        maxHeight: 220,
+                        borderRadius: 12,
+                        margin: '0 0 10px',
+                        boxShadow: '0 10px 28px rgba(0,0,0,0.25)',
+                      },
+                    })
+                  : null,
                 h(
                   'div',
                   {
                     style: {
-                      fontSize: 13,
-                      lineHeight: '22px',
+                      fontSize: 14,
+                      lineHeight: '24px',
                       whiteSpace: 'pre-wrap',
                       wordBreak: 'break-word',
                       color: C.ink,
@@ -1042,8 +1071,8 @@ window.__ModuleLoader__.load({
         notice ? h('div', { style: { fontSize: 12, color: C.err, marginBottom: 8 } }, notice) : null,
         state.status === 'error' ? h(ErrorBox, { error: state.error, onRetry: load }) : null,
 
-        // data table
-        h(
+        // data table (hidden while the dedicated editor screen is open)
+        editing ? null : h(
           'div',
           { className: 'lm-glass lm-fade', style: glass({ borderRadius: 14, overflow: 'hidden' }) },
           h(
@@ -1177,7 +1206,29 @@ window.__ModuleLoader__.load({
                   padding: '14px',
                 }),
               },
-              h('div', { style: { fontSize: 13, fontWeight: 600, marginBottom: 10 } }, editing.id ? '编辑人格' : '新建人格'),
+              h(
+                'div',
+                { style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 } },
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'lm-btn',
+                    onClick: () => setEditing(null),
+                    style: {
+                      fontSize: 12,
+                      padding: '4px 10px',
+                      borderRadius: 8,
+                      border: `1px solid ${C.line}`,
+                      background: 'transparent',
+                      color: C.sub,
+                      cursor: 'pointer',
+                    },
+                  },
+                  '← 返回人格列表',
+                ),
+                h('div', { style: { fontSize: 13, fontWeight: 600 } }, editing.id ? '编辑人格' : '新建人格'),
+              ),
               h(
                 'div',
                 { style: { display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' } },
