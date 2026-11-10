@@ -8,6 +8,38 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ---
 
+## [0.14.0] — 2026-11-10
+
+### 新增
+
+- **`memory_recall` 工具**：模型可按问题主动回忆记忆，按相关度排序、跨全局与工作区，可选包含归档条目；命中时刷新 `lastUsedAt`，让衰减判断跟随真实使用。
+- **每日备份**：每天第一次写入时把记忆库快照存到 `backups/memories-YYYY-MM-DD.json`，只保留最近 7 份。
+- **回收站**：删除的记忆进入 `trash.json` 保留 30 天，面板可逐条恢复或一键清空。
+- **提炼设置**：面板新增开关——自动提炼、每 N 轮提炼一次（1–20）、只把用户消息发给模型（不发送助手回复）。
+
+### 变更
+
+- `settings.json` 新增 `auto` / `everyTurns` / `onlyUser` 三个字段，旧文件自动兼容。
+- 版本号 `0.13.0` → `0.14.0`。
+
+---
+
+## [0.14.0] — 2026-11-10
+
+### Added
+
+- **`memory_recall` tool**: the model can recall memories on demand, relevance-ranked across global and workspace scopes, optionally including archived rows; hits refresh `lastUsedAt` so decay follows real use.
+- **Daily backups**: the first write of each day snapshots the store to `backups/memories-YYYY-MM-DD.json`, keeping the last seven.
+- **Recycle bin**: deleted memories go to `trash.json` for 30 days, restorable one by one or emptied from the panel.
+- **Extraction settings**: auto-extraction on/off, extract every N turns (1–20), and send only user messages to the model (no assistant replies).
+
+### Changed
+
+- `settings.json` gained `auto` / `everyTurns` / `onlyUser`; older files still load.
+- Version `0.13.0` → `0.14.0`.
+
+---
+
 ## [0.13.0] — 2026-11-04
 
 ### 新增

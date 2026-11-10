@@ -8,7 +8,7 @@
  * sessions. Three tools expose explicit search / save / forget.
  */
 
-import { mkdir, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { zstdDecompressSync } from 'node:zlib'
 import { homedir } from 'node:os'
 import path from 'node:path'
@@ -104,8 +104,68 @@ export function apply(ctx) {
         await writeFile(tmp, snapshot, 'utf8')
         await rename(tmp, storeFile)
       })
+      .then(() => maybeDailyBackup(snapshot))
       .catch(error => warn('[long-memory] failed to persist store:', error))
     return writeChain
+  }
+
+  // ---- safety net: one snapshot per day, and a 30-day recycle bin ----------
+
+  const backupsDir = path.join(dataDir, 'backups')
+  const trashFile = path.join(dataDir, 'trash.json')
+  const trash = []
+  let lastBackupDay = ''
+
+  async function maybeDailyBackup(snapshot) {
+    const day = new Date().toISOString().slice(0, 10)
+    if (lastBackupDay === day) return
+    lastBackupDay = day
+    try {
+      await mkdir(backupsDir, { recursive: true })
+      await writeFile(path.join(backupsDir, `memories-${day}.json`), snapshot, 'utf8')
+      const names = (await readdir(backupsDir)).filter(name => /^memories-\d{4}-\d{2}-\d{2}\.json$/.test(name)).sort()
+      for (const name of names.slice(0, Math.max(0, names.length - 7))) {
+        await rm(path.join(backupsDir, name), { force: true })
+      }
+    } catch (error) {
+      warn('[long-memory] daily backup failed:', error)
+    }
+  }
+
+  async function loadTrash() {
+    try {
+      const parsed = JSON.parse(await readFile(trashFile, 'utf8'))
+      if (Array.isArray(parsed)) {
+        for (const item of parsed) {
+          if (item && item.entry && typeof item.entry.id === 'string') trash.push(item)
+        }
+      }
+    } catch (error) {
+      if (error?.code !== 'ENOENT') warn('[long-memory] failed to load trash:', error)
+    }
+    const cutoff = Date.now() - 30 * 86400000
+    for (let i = trash.length - 1; i >= 0; i -= 1) {
+      if ((trash[i].deletedAt || 0) < cutoff) trash.splice(i, 1)
+    }
+  }
+
+  function persistTrash() {
+    const snapshot = JSON.stringify(trash.slice(0, 200))
+    writeChain = writeChain
+      .then(async () => {
+        await mkdir(dataDir, { recursive: true })
+        const tmp = `${trashFile}.tmp`
+        await writeFile(tmp, snapshot, 'utf8')
+        await rename(tmp, trashFile)
+      })
+      .catch(error => warn('[long-memory] failed to persist trash:', error))
+    return writeChain
+  }
+
+  function moveToTrash(entry) {
+    if (!entry) return
+    trash.unshift({ entry, deletedAt: Date.now() })
+    if (trash.length > 200) trash.length = 200
   }
 
   async function recordRun(patch) {
@@ -211,12 +271,20 @@ export function apply(ctx) {
     const started = Date.now()
     const workspace = normalizeCwd(cwd)
     lastAutoRoute = route
+    if (!settings.auto) {
+      await recordRun({ ok: false, sessionId, turn, workspace, reason: '自动提炼已关闭' })
+      return
+    }
+    const seen = (turnCounters.get(sessionId) || 0) + 1
+    turnCounters.set(sessionId, seen)
+    if (settings.everyTurns > 1 && seen % settings.everyTurns !== 0) return
     if (workspaceDisabled(workspace)) {
       await recordRun({ ok: false, sessionId, turn, workspace, reason: 'workspace disabled' })
       return
     }
+    const assistantForModel = settings.onlyUser ? '' : assistantText
     try {
-      const raw = await complete(buildExtractPrompt(userText, assistantText), route)
+      const raw = await complete(buildExtractPrompt(userText, assistantForModel), route)
       const candidates = parseCandidates(raw, MAX_CANDIDATES)
       let added = 0
       let merged = 0
@@ -593,9 +661,70 @@ export function apply(ctx) {
       if (!id) return { removed: false, reason: 'id required' }
       const index = state.entries.findIndex(entry => entry.id === id)
       if (index < 0) return { removed: false, reason: 'no memory with that id' }
+      moveToTrash(state.entries[index])
       state.entries.splice(index, 1)
       await persist()
-      return { removed: true, id }
+      await persistTrash()
+      return { removed: true, id, restorableForDays: 30 }
+    },
+  })
+
+  ctx.tools.register({
+    name: 'memory_recall',
+    description:
+      'Recall long-term memories relevant to the question at hand, ranked by relevance across global and workspace scopes. Unlike the digest already in your system prompt, this searches the whole store at any point in the session, and can include archived (cold) rows. Use it when the conversation moves to something that may have come up in an earlier session.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'The topic or question to recall memories about.',
+        },
+        includeArchived: {
+          type: 'boolean',
+          description: 'Also search archived (cold) rows. Default false.',
+        },
+        limit: {
+          type: 'integer',
+          minimum: 1,
+          maximum: 12,
+          description: 'Maximum rows to return. Default 5.',
+        },
+      },
+      required: ['query'],
+      additionalProperties: false,
+    },
+    output: {
+      schema: { type: 'object' },
+      render: (args, value) => [{ type: 'text', text: JSON.stringify(value) }],
+    },
+    async execute(args, exec) {
+      const query = cleanText(String(args?.query ?? ''), 200)
+      if (!query) return { query: '', results: [] }
+      const rawLimit = Number(args?.limit)
+      const limit = Number.isFinite(rawLimit) ? Math.min(12, Math.max(1, Math.floor(rawLimit))) : 5
+      const includeArchived = Boolean(args?.includeArchived)
+      const pool = visibleEntries(resolveCwd(exec?.agent), 'auto').filter(entry => includeArchived || !entry.archived)
+      const ranked = pool
+        .map(entry => ({ entry, score: scoreEntry(entry, query) }))
+        .filter(item => item.score > 0)
+        .sort((a, b) => b.score - a.score || (b.entry.updatedAt || 0) - (a.entry.updatedAt || 0))
+        .slice(0, limit)
+      if (ranked.length === 0) return { query, results: [] }
+      const now = Date.now()
+      for (const { entry } of ranked) entry.lastUsedAt = now
+      await persist()
+      return {
+        query,
+        results: ranked.map(({ entry, score }) => ({
+          id: entry.id,
+          scope: entry.scope,
+          text: entry.text,
+          tags: entry.tags || [],
+          archived: Boolean(entry.archived),
+          score: Number(score.toFixed(3)),
+        })),
+      }
     },
   })
 
@@ -755,7 +884,20 @@ export function apply(ctx) {
       lastRun,
       diary: diary.entries.slice(0, 30),
       backfill: { ...backfill },
-      settings: { disabledWorkspaces: settings.disabledWorkspaces },
+      settings: {
+        disabledWorkspaces: settings.disabledWorkspaces,
+        auto: settings.auto,
+        everyTurns: settings.everyTurns,
+        onlyUser: settings.onlyUser,
+      },
+      trash: {
+        count: trash.length,
+        items: trash.slice(0, 20).map(item => ({
+          id: item.entry.id,
+          text: item.entry.text,
+          deletedAt: item.deletedAt || 0,
+        })),
+      },
       personas: {
         activeId: personas.activeId,
         list: personaList().map(item => {
@@ -978,7 +1120,14 @@ export function apply(ctx) {
   // ---- settings: per-workspace recording switch --------------------------
 
   const settingsFile = path.join(dataDir, 'settings.json')
-  const settings = { disabledWorkspaces: [] }
+  const settings = { disabledWorkspaces: [], auto: true, everyTurns: 1, onlyUser: false }
+  const turnCounters = new Map()
+
+  function clampEveryTurns(value) {
+    const number = Math.floor(Number(value))
+    if (!Number.isFinite(number)) return 1
+    return Math.min(20, Math.max(1, number))
+  }
 
   async function loadSettings() {
     try {
@@ -988,13 +1137,21 @@ export function apply(ctx) {
           .map(item => normalizeCwd(String(item || '')))
           .filter(Boolean)
       }
+      if (parsed && typeof parsed.auto === 'boolean') settings.auto = parsed.auto
+      if (parsed && parsed.everyTurns !== undefined) settings.everyTurns = clampEveryTurns(parsed.everyTurns)
+      if (parsed && typeof parsed.onlyUser === 'boolean') settings.onlyUser = parsed.onlyUser
     } catch (error) {
       if (error?.code !== 'ENOENT') warn('[long-memory] failed to load settings:', error)
     }
   }
 
   function persistSettings() {
-    const snapshot = JSON.stringify({ disabledWorkspaces: settings.disabledWorkspaces })
+    const snapshot = JSON.stringify({
+      disabledWorkspaces: settings.disabledWorkspaces,
+      auto: settings.auto,
+      everyTurns: settings.everyTurns,
+      onlyUser: settings.onlyUser,
+    })
     writeChain = writeChain
       .then(async () => {
         await mkdir(dataDir, { recursive: true })
@@ -1574,9 +1731,36 @@ export function apply(ctx) {
         if (body?.action === 'forget') {
           const index = state.entries.findIndex(entry => entry.id === body.id)
           if (index >= 0) {
+            moveToTrash(state.entries[index])
             state.entries.splice(index, 1)
             await persist()
+            await persistTrash()
           }
+        } else if (body?.action === 'trash-restore') {
+          const id = String(body.id || '')
+          const index = trash.findIndex(item => item.entry.id === id)
+          if (index < 0) {
+            settingsResult = { ok: false, reason: '回收站里没有这条' }
+          } else if (state.entries.some(entry => entry.id === id)) {
+            settingsResult = { ok: false, reason: '记忆里已经存在同名条目' }
+          } else {
+            state.entries.push(trash[index].entry)
+            trash.splice(index, 1)
+            await persist()
+            await persistTrash()
+            settingsResult = { ok: true }
+          }
+        } else if (body?.action === 'trash-empty') {
+          trash.length = 0
+          await persistTrash()
+          settingsResult = { ok: true }
+        } else if (body?.action === 'settings-save') {
+          const input = body.settings || {}
+          if (typeof input.auto === 'boolean') settings.auto = input.auto
+          if (input.everyTurns !== undefined) settings.everyTurns = clampEveryTurns(input.everyTurns)
+          if (typeof input.onlyUser === 'boolean') settings.onlyUser = input.onlyUser
+          await persistSettings()
+          settingsResult = { ok: true }
         } else if (body?.action === 'save') {
           const text = cleanText(String(body?.text ?? ''), 240)
           const scope = body?.scope === 'workspace' ? 'workspace' : 'global'
@@ -1825,4 +2009,5 @@ export function apply(ctx) {
   loadDiary().catch(error => warn('[long-memory] diary load crashed:', error))
   loadPersonas().catch(error => warn('[long-memory] persona load crashed:', error))
   loadSettings().catch(error => warn('[long-memory] settings load crashed:', error))
+  loadTrash().catch(error => warn('[long-memory] trash load crashed:', error))
 }

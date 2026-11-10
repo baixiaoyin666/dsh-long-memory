@@ -455,6 +455,30 @@ window.__ModuleLoader__.load({
         [load],
       )
 
+      const saveSettings = useCallback(
+        async patch => {
+          await fetch(API, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ action: 'settings-save', settings: patch }),
+          })
+          await load()
+        },
+        [load],
+      )
+
+      const trashAction = useCallback(
+        async (action, id) => {
+          await fetch(API, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ action, id }),
+          })
+          await load()
+        },
+        [load],
+      )
+
       const startEdit = useCallback(entry => {
         setEditId(entry.id)
         setEditForm({
@@ -508,6 +532,7 @@ window.__ModuleLoader__.load({
       const analysis = data && data.analysis
       const entries = data && data.entries ? data.entries : []
       const backfill = (data && data.backfill) || { running: false, total: 0, done: 0 }
+      const settings = (data && data.settings) || {}
 
       useEffect(() => {
         if (!backfill.running) return undefined
@@ -845,6 +870,138 @@ window.__ModuleLoader__.load({
                     )
                   : null,
               ),
+
+              h(
+                'div',
+                {
+                  className: 'lm-glass lm-fade',
+                  style: glass({ borderRadius: 14, padding: '12px 14px', marginBottom: 12 }),
+                },
+                h('div', { style: { fontSize: 12, color: C.sub, marginBottom: 8 } }, '提炼设置'),
+                h(
+                  'div',
+                  { style: { display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' } },
+                  h(
+                    'label',
+                    { style: { display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, color: C.ink } },
+                    h('input', {
+                      type: 'checkbox',
+                      checked: settings.auto !== false,
+                      onChange: event => saveSettings({ auto: event.target.checked }),
+                    }),
+                    '自动提炼',
+                  ),
+                  h(
+                    'label',
+                    { style: { display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, color: C.ink } },
+                    '每',
+                    h('input', {
+                      type: 'number',
+                      min: 1,
+                      max: 20,
+                      value: settings.everyTurns || 1,
+                      disabled: settings.auto === false,
+                      onChange: event => saveSettings({ everyTurns: Number(event.target.value) || 1 }),
+                      style: {
+                        width: 56,
+                        fontSize: 12,
+                        padding: '3px 6px',
+                        borderRadius: 6,
+                        border: `1px solid ${C.line}`,
+                        background: 'transparent',
+                        color: C.ink,
+                      },
+                    }),
+                    '轮提炼一次',
+                  ),
+                  h(
+                    'label',
+                    { style: { display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, color: C.ink } },
+                    h('input', {
+                      type: 'checkbox',
+                      checked: settings.onlyUser === true,
+                      onChange: event => saveSettings({ onlyUser: event.target.checked }),
+                    }),
+                    '只发送用户消息',
+                  ),
+                ),
+              ),
+
+              data.trash && data.trash.count
+                ? h(
+                    'div',
+                    {
+                      className: 'lm-glass lm-fade',
+                      style: glass({ borderRadius: 14, padding: '10px 14px', marginBottom: 12 }),
+                    },
+                    h(
+                      'div',
+                      { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 } },
+                      h('div', { style: { fontSize: 12, color: C.sub } }, `回收站（${data.trash.count}）`),
+                      h('div', { style: { fontSize: 11, color: C.faint } }, '删除的记忆保留 30 天'),
+                      h(
+                        'button',
+                        {
+                          type: 'button',
+                          onClick: () => trashAction('trash-empty'),
+                          style: {
+                            marginLeft: 'auto',
+                            fontSize: 11,
+                            padding: '2px 9px',
+                            borderRadius: 999,
+                            border: `1px solid ${C.err}`,
+                            color: C.err,
+                            background: 'transparent',
+                            cursor: 'pointer',
+                          },
+                        },
+                        '清空',
+                      ),
+                    ),
+                    data.trash.items.slice(0, 5).map(item =>
+                      h(
+                        'div',
+                        {
+                          key: item.id,
+                          style: { display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0' },
+                        },
+                        h(
+                          'div',
+                          {
+                            style: {
+                              flex: 1,
+                              minWidth: 0,
+                              fontSize: 11,
+                              color: C.sub,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            },
+                          },
+                          item.text,
+                        ),
+                        h(
+                          'button',
+                          {
+                            type: 'button',
+                            onClick: () => trashAction('trash-restore', item.id),
+                            style: {
+                              flex: 'none',
+                              fontSize: 11,
+                              padding: '2px 9px',
+                              borderRadius: 999,
+                              border: `1px solid ${C.ok}`,
+                              color: C.ok,
+                              background: 'transparent',
+                              cursor: 'pointer',
+                            },
+                          },
+                          '恢复',
+                        ),
+                      ),
+                    ),
+                  )
+                : null,
 
               analysis.workspaces.length
                 ? h(
