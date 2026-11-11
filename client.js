@@ -183,6 +183,7 @@ window.__ModuleLoader__.load({
       .lm-dash > .lm-span-4 { grid-column: span 4 }
       .lm-dash > .lm-span-6 { grid-column: span 6 }
       .lm-dash > .lm-span-8 { grid-column: span 8 }
+      .lm-dash > .lm-span-12 { grid-column: span 12 }
       .lm-panel { display: flex; flex-direction: column; gap: 6px; min-width: 0 }
       .lm-panel-head { display: flex; align-items: center; gap: 6px; min-width: 0 }
       .lm-bar { transition: height .55s cubic-bezier(.2,.7,.3,1), background .2s ease, opacity .2s ease }
@@ -366,7 +367,14 @@ window.__ModuleLoader__.load({
         'div',
         {
           className: `${props.span || ''} lm-tilt lm-spot lm-glass lm-fade`,
-          style: glass({ borderRadius: 14, padding: '12px 14px', minWidth: 0 }),
+          onClick: props.onPick,
+          title: props.onPick ? props.hint || '点击筛选' : undefined,
+          style: glass({
+            borderRadius: 14,
+            padding: '12px 14px',
+            minWidth: 0,
+            cursor: props.onPick ? 'pointer' : 'default',
+          }),
           ...tiltProps(),
         },
         h('div', { style: { fontSize: 11, color: C.faint, marginBottom: 4 } }, props.label),
@@ -448,7 +456,7 @@ window.__ModuleLoader__.load({
 
     /** The statistics dashboard: bento panels with live, clickable charts. */
     function Dashboard(props) {
-      const { analysis, entries, range, onRange, dayFilter, onDay, onScope, onTag } = props
+      const { analysis, entries, range, onRange, dayFilter, onDay, onScope, onTag, onWorkspace } = props
       const daysSpan = range > 0 ? range : 90
       const stats = useMemo(() => {
         const dayKeyOf = ts => {
@@ -761,9 +769,13 @@ window.__ModuleLoader__.load({
 
         panel(
           'lm-span-6',
-          [headText('工作区分布'), headMeta(`${analysis.workspaces.length} 个工作区`)],
+          [headText('工作区分布'), headMeta('点击按工作区筛选')],
           stats.workspaces.length
-            ? h(BarList, { rows: stats.workspaces, color: '#b08cff' })
+            ? h(BarList, {
+                rows: stats.workspaces,
+                color: '#b08cff',
+                onPick: label => onWorkspace && onWorkspace(label === '（未记录）' ? '' : label),
+              })
             : h('div', { style: { fontSize: 11, color: C.faint } }, '还没有工作区记忆'),
         ),
 
@@ -842,6 +854,8 @@ window.__ModuleLoader__.load({
       const [editForm, setEditForm] = useState(null)
       const [range, setRange] = useState(14)
       const [dayFilter, setDayFilter] = useState('')
+      const [workspaceFilter, setWorkspaceFilter] = useState('')
+      const [everyTurnsDraft, setEveryTurnsDraft] = useState('')
 
       useEffect(() => {
         load()
@@ -1041,6 +1055,7 @@ window.__ModuleLoader__.load({
         }
         const needle = words.join(' ').toLowerCase()
         return entries.filter(entry => {
+          if (workspaceFilter && (entry.workspace || '') !== workspaceFilter) return false
           if (dayFilter && dayKeyOf(entry.createdAt || 0) !== dayFilter) return false
           if (!spec.archived && entry.archived) return false
           if (scope !== 'all' && entry.scope !== scope) return false
@@ -1051,7 +1066,7 @@ window.__ModuleLoader__.load({
           const haystack = `${entry.text} ${(entry.tags || []).join(' ')} ${entry.workspace || ''}`.toLowerCase()
           return haystack.includes(needle)
         })
-      }, [entries, query, scope, dayFilter])
+      }, [entries, query, scope, dayFilter, workspaceFilter])
 
       const healthColor = analysis
         ? analysis.health >= 80
@@ -1172,6 +1187,10 @@ window.__ModuleLoader__.load({
                   onScope: value => setScope(value),
                   onTag: token => {
                     setQuery(token)
+                    setDayFilter('')
+                  },
+                  onWorkspace: value => {
+                    setWorkspaceFilter(previous => (previous === value ? '' : value))
                     setDayFilter('')
                   },
                 }),
@@ -1304,9 +1323,17 @@ window.__ModuleLoader__.load({
                       type: 'number',
                       min: 1,
                       max: 20,
-                      value: settings.everyTurns || 1,
+                      value: everyTurnsDraft !== '' ? everyTurnsDraft : settings.everyTurns || 1,
                       disabled: settings.auto === false,
-                      onChange: event => saveSettings({ everyTurns: Number(event.target.value) || 1 }),
+                      onChange: event => setEveryTurnsDraft(event.target.value),
+                      onBlur: () => {
+                        const next = Math.min(20, Math.max(1, Number(everyTurnsDraft) || Number(settings.everyTurns) || 1))
+                        setEveryTurnsDraft('')
+                        if (next !== Number(settings.everyTurns)) void saveSettings({ everyTurns: next })
+                      },
+                      onKeyDown: event => {
+                        if (event.key === 'Enter') event.currentTarget.blur()
+                      },
                       style: {
                         width: 56,
                         fontSize: 12,
@@ -1587,16 +1614,22 @@ window.__ModuleLoader__.load({
                   )
                 : null,
 
-              dayFilter
+              dayFilter || workspaceFilter
                 ? h(
                     'div',
-                    { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 } },
-                    h(Chip, { color: C.brand }, `日期 ${dayFilter}`),
+                    { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' } },
+                    dayFilter ? h(Chip, { color: C.brand }, `日期 ${dayFilter}`) : null,
+                    workspaceFilter
+                      ? h(Chip, { color: '#b08cff' }, `工作区 ${workspaceFilter.split('/').slice(-1)[0] || workspaceFilter}`)
+                      : null,
                     h(
                       'button',
                       {
                         type: 'button',
-                        onClick: () => setDayFilter(''),
+                        onClick: () => {
+                          setDayFilter('')
+                          setWorkspaceFilter('')
+                        },
                         style: {
                           fontSize: 11,
                           padding: '1px 8px',
@@ -1648,6 +1681,29 @@ window.__ModuleLoader__.load({
                   h('option', { value: 'all' }, '全部范围'),
                   h('option', { value: 'global' }, '仅全局'),
                   h('option', { value: 'workspace' }, '仅工作区'),
+                ),
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    onClick: () => setSelected(filtered.map(entry => entry.id)),
+                    title: '选择当前筛选出的全部记忆',
+                    style: {
+                      fontSize: 12,
+                      padding: '7px 12px',
+                      borderRadius: 8,
+                      border: `1px solid ${C.line}`,
+                      background: 'transparent',
+                      color: C.sub,
+                      cursor: 'pointer',
+                    },
+                  },
+                  '全选',
+                ),
+                h(
+                  'span',
+                  { style: { fontSize: 11, color: C.faint, alignSelf: 'center' } },
+                  `${filtered.length} 条`,
                 ),
               ),
 
@@ -1840,7 +1896,18 @@ window.__ModuleLoader__.load({
                               ? h(
                                   'div',
                                   { style: { display: 'flex', gap: 5, marginTop: 5, flexWrap: 'wrap' } },
-                                  entry.tags.map(tag => h(Chip, { key: tag }, tag)),
+                                  entry.tags.map(tag =>
+                                    h(
+                                      'span',
+                                      {
+                                        key: tag,
+                                        title: `按标签筛选：${tag}`,
+                                        onClick: () => setQuery(`tag:${tag}`),
+                                        style: { cursor: 'pointer' },
+                                      },
+                                      h(Chip, null, tag),
+                                    ),
+                                  ),
                                 )
                               : null,
                             h(
@@ -1997,7 +2064,7 @@ window.__ModuleLoader__.load({
 
     /** Diary dashboard: streak, mood mix, habits and a writing heatmap. */
     function DiaryDash(props) {
-      const { entries, moodFilter, dayFilter, onMood, onDay } = props
+      const { entries, moodFilter, dayFilter, onMood, onDay, onHabit } = props
       const stats = useMemo(() => {
         const dayKeyOf = ts => {
           const date = new Date(ts)
@@ -2154,7 +2221,11 @@ window.__ModuleLoader__.load({
             h('span', { style: { color: C.faint, fontSize: 11 } }, '近 30 天'),
           ),
           stats.habits.length
-            ? h(BarList, { rows: stats.habits, color: '#7ed6a5' })
+            ? h(BarList, {
+                rows: stats.habits,
+                color: '#7ed6a5',
+                onPick: label => onHabit && onHabit(label),
+              })
             : h('div', { style: { fontSize: 11, color: C.faint } }, '还没有记录到习惯'),
         ),
 
@@ -2208,6 +2279,7 @@ window.__ModuleLoader__.load({
       const [weeklyBusy, setWeeklyBusy] = useState(false)
       const [moodFilter, setMoodFilter] = useState('')
       const [dayFilter, setDayFilter] = useState('')
+      const [habitFilter, setHabitFilter] = useState('')
 
       const generateWeekly = useCallback(async force => {
         setWeeklyBusy(true)
@@ -2257,10 +2329,15 @@ window.__ModuleLoader__.load({
       }, [load])
 
       const entries = (state.data && state.data.diary) || []
-      const filteredDiary = entries.filter(
-        entry =>
-          (!moodFilter || (entry.mood || 'daily') === moodFilter) && (!dayFilter || entry.date === dayFilter),
-      )
+      const filteredDiary = entries.filter(entry => {
+        if (moodFilter && (entry.mood || 'daily') !== moodFilter) return false
+        if (dayFilter && entry.date !== dayFilter) return false
+        if (habitFilter) {
+          const habits = (entry.habits || []).map(habit => (typeof habit === 'string' ? habit : habit && habit.text))
+          if (!habits.includes(habitFilter)) return false
+        }
+        return true
+      })
       const weekly = (state.data && state.data.weekly) || []
       const currentWeekKey = (state.data && state.data.currentWeek) || ''
       const currentWeekly = weekly.find(item => item.week === currentWeekKey)
@@ -2459,11 +2536,12 @@ window.__ModuleLoader__.load({
                 dayFilter,
                 onMood: value => setMoodFilter(value || ''),
                 onDay: value => setDayFilter(value || ''),
+                onHabit: value => setHabitFilter(previous => (previous === value ? '' : value)),
               }),
             )
           : null,
 
-        moodFilter || dayFilter
+        moodFilter || dayFilter || habitFilter
           ? h(
               'div',
               { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' } },
@@ -2471,6 +2549,7 @@ window.__ModuleLoader__.load({
                 ? h(Chip, { color: MOOD_COLORS[moodFilter] || C.brand }, `${MOOD_EMOJI[moodFilter] || ''} ${MOOD_LABEL[moodFilter] || moodFilter}`)
                 : null,
               dayFilter ? h(Chip, { color: C.brand }, dayFilter) : null,
+              habitFilter ? h(Chip, { color: '#7ed6a5' }, `习惯 ${habitFilter}`) : null,
               h(
                 'button',
                 {
@@ -2478,6 +2557,7 @@ window.__ModuleLoader__.load({
                   onClick: () => {
                     setMoodFilter('')
                     setDayFilter('')
+                    setHabitFilter('')
                   },
                   style: {
                     fontSize: 11,
@@ -2519,13 +2599,17 @@ window.__ModuleLoader__.load({
                     'div',
                     {
                       key: day.key,
-                      title: `${day.full} · ${day.entry ? MOOD_LABEL[day.mood] || day.mood : '没有记录'}`,
+                      title: `${day.full} · ${day.entry ? MOOD_LABEL[day.mood] || day.mood : '没有记录'}（点击筛选）`,
+                      onClick: () => {
+                        if (day.entry) setDayFilter(day.key)
+                      },
                       style: {
                         display: 'flex',
                         flexDirection: 'column',
                         alignItems: 'center',
                         gap: 3,
                         width: 32,
+                        cursor: day.entry ? 'pointer' : 'default',
                       },
                     },
                     h(
@@ -2790,6 +2874,7 @@ window.__ModuleLoader__.load({
       const [editing, setEditing] = useState(null)
       const [busy, setBusy] = useState(false)
       const [notice, setNotice] = useState('')
+      const [personaFilter, setPersonaFilter] = useState('')
 
       const load = useCallback(async () => {
         try {
@@ -2828,6 +2913,7 @@ window.__ModuleLoader__.load({
 
       const personas = (state.data && state.data.personas) || { activeId: '', list: [] }
       const list = personas.list || []
+      const visiblePersonas = personaFilter === 'custom' ? list.filter(item => !item.builtin) : list
 
       const inputStyle = {
         fontSize: 13,
@@ -2899,12 +2985,19 @@ window.__ModuleLoader__.load({
           : h(
               'div',
               { className: 'lm-dash', style: { marginBottom: 12 } },
-              h(Tile, { span: 'lm-span-3', label: '人格总数', value: list.length }),
+              h(Tile, {
+                span: 'lm-span-3',
+                label: '人格总数',
+                value: list.length,
+                onPick: () => setPersonaFilter(''),
+              }),
               h(Tile, {
                 span: 'lm-span-3',
                 label: '自定义',
                 value: list.filter(item => !item.builtin).length,
                 color: C.brand,
+                hint: personaFilter === 'custom' ? '再点一次显示全部' : '只看自定义人格',
+                onPick: () => setPersonaFilter(previous => (previous === 'custom' ? '' : 'custom')),
               }),
               h(Tile, {
                 span: 'lm-span-3',
@@ -2918,6 +3011,31 @@ window.__ModuleLoader__.load({
                 sub: (list.find(item => item.id === personas.activeId) || {}).name || '大肥鱼',
               }),
             ),
+
+        personaFilter === 'custom'
+          ? h(
+              'div',
+              { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 } },
+              h(Chip, { color: C.brand }, '只看自定义人格'),
+              h(
+                'button',
+                {
+                  type: 'button',
+                  onClick: () => setPersonaFilter(''),
+                  style: {
+                    fontSize: 11,
+                    padding: '1px 8px',
+                    borderRadius: 999,
+                    border: `1px solid ${C.line}`,
+                    background: 'transparent',
+                    color: C.sub,
+                    cursor: 'pointer',
+                  },
+                },
+                '清除',
+              ),
+            )
+          : null,
 
         // data table (hidden while the dedicated editor screen is open)
         editing ? null : h(
@@ -2944,8 +3062,7 @@ window.__ModuleLoader__.load({
             h(
               'tbody',
               null,
-              list.map(persona =>
-                h(
+              visiblePersonas.map(persona =>                h(
                   'tr',
                   { key: persona.id, className: 'lm-row lm-fade', style: { borderTop: `1px solid ${C.line}`, animationDelay: `${Math.min(list.indexOf(persona), 10) * 22}ms` } },
                   h(

@@ -8,6 +8,40 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ---
 
+## [0.19.0] — 2026-11-11
+
+### 变更
+
+- **把「好看」补成「好用」**：所有图表块都能点，且点击后列表真的跟着筛：
+  - 记忆页：工作区条形图可按工作区筛选；记忆条目上的标签可直接点开 `tag:` 筛选；工具栏新增「全选」（选中当前筛选结果）；
+  - 日记页：习惯条形图可按习惯筛选；最近情绪的表情格点击即按当天筛选；
+  - 人格页：「自定义」指标块点击只看自定义人格，再点恢复。
+- 提炼设置的「每 N 轮」输入改为**失焦/回车才提交**，不再每敲一个数字就发一次请求。
+- 补齐仪表盘的 3 列与 12 列栅格样式（日记页写作热力依赖 12 列）。
+
+### 版本
+
+- `0.18.0` → `0.19.0`。
+
+---
+
+## [0.19.0] — 2026-11-11
+
+### Changed
+
+- **From pretty to usable**: every chart is clickable and the list really follows:
+  - memory tab: the workspace bars filter by workspace; tags on a memory row open a `tag:` filter; the toolbar gained "select all" for the current result set;
+  - diary tab: habit bars filter by habit; clicking a face in the recent-mood strip filters that day;
+  - persona tab: the "custom" tile shows custom personas only, click again to reset.
+- The "every N turns" input now commits on blur or Enter instead of posting on each keystroke.
+- Added the missing 3-column and 12-column grid styles (the diary heatmap needs 12).
+
+### Version
+
+- `0.18.0` → `0.19.0`.
+
+---
+
 ## [0.18.0] — 2026-11-11
 
 ### 新增
