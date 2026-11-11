@@ -8,6 +8,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ---
 
+## [0.18.0] — 2026-11-11
+
+### 新增
+
+- **日记页仪表盘**：4 个指标块（日记总数 / 连续写作天数 / 近 30 天篇数 / 平均字数）＋ 心情分布圆环（近 30 天，点击按心情筛选）＋ 习惯 Top 条形图 ＋ 最近 5 周写作热力格（点击按日期筛选）。
+- **筛选联动**：选中心情或日期后，下方列表只显示对应日记，顶部出现筛选小标签，可一键清除。
+- **人格页指标块**：人格总数 / 自定义数量 / 日记总数 / 当前人格（emoji + 名字）。
+
+### 变更
+
+- 日记、人格两页与记忆页统一使用 12 栅格 bento 布局与同一套玻璃卡片、悬停与过渡效果。
+- 版本号 `0.17.0` → `0.18.0`。
+
+---
+
+## [0.18.0] — 2026-11-11
+
+### Added
+
+- **Diary dashboard**: four metric tiles (entries / writing streak / last 30 days / average length), a 30-day mood donut (click a mood to filter), a habits bar chart, and a five-week writing heatmap (click a day to filter).
+- **Linked filtering**: picking a mood or a date narrows the list below, with removable chips above it.
+- **Persona tiles**: total personas / custom count / total diaries / active persona (emoji + name).
+
+### Changed
+
+- Diary and persona tabs now share the 12-column bento layout, glass cards, hover and transition treatment with the memory tab.
+- Version `0.17.0` → `0.18.0`.
+
+---
+
 ## [0.17.0] — 2026-11-11
 
 ### 变更

@@ -179,6 +179,7 @@ window.__ModuleLoader__.load({
       /* dashboard bento */
       .lm-dash { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 10px }
       .lm-dash > .lm-span-2 { grid-column: span 2 }
+      .lm-dash > .lm-span-3 { grid-column: span 3 }
       .lm-dash > .lm-span-4 { grid-column: span 4 }
       .lm-dash > .lm-span-6 { grid-column: span 6 }
       .lm-dash > .lm-span-8 { grid-column: span 8 }
@@ -1994,6 +1995,210 @@ window.__ModuleLoader__.load({
       )
     }
 
+    /** Diary dashboard: streak, mood mix, habits and a writing heatmap. */
+    function DiaryDash(props) {
+      const { entries, moodFilter, dayFilter, onMood, onDay } = props
+      const stats = useMemo(() => {
+        const dayKeyOf = ts => {
+          const date = new Date(ts)
+          return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+        }
+        const dates = new Set(entries.map(entry => entry.date))
+        const cursor = new Date()
+        if (!dates.has(dayKeyOf(cursor.getTime()))) cursor.setDate(cursor.getDate() - 1)
+        let streak = 0
+        while (dates.has(dayKeyOf(cursor.getTime()))) {
+          streak += 1
+          cursor.setDate(cursor.getDate() - 1)
+        }
+        const since = Date.now() - 30 * 86400000
+        const moods = new Map()
+        const habits = new Map()
+        let words = 0
+        let count30 = 0
+        for (const entry of entries) {
+          const ts = Date.parse(`${entry.date}T00:00:00`)
+          if (!Number.isFinite(ts) || ts < since) continue
+          count30 += 1
+          const mood = entry.mood || 'daily'
+          moods.set(mood, (moods.get(mood) || 0) + 1)
+          for (const habit of entry.habits || []) {
+            const text = typeof habit === 'string' ? habit : habit && habit.text
+            if (text) habits.set(text, (habits.get(text) || 0) + 1)
+          }
+          words += (entry.diary || '').length
+        }
+        const heat = []
+        for (let offset = 34; offset >= 0; offset -= 1) {
+          const date = new Date()
+          date.setDate(date.getDate() - offset)
+          heat.push({ key: dayKeyOf(date.getTime()), has: dates.has(dayKeyOf(date.getTime())) })
+        }
+        return {
+          streak,
+          moods: [...moods].sort((a, b) => b[1] - a[1]),
+          moodTotal: [...moods].reduce((sum, [, count]) => sum + count, 0),
+          habits: [...habits].sort((a, b) => b[1] - a[1]).slice(0, 5),
+          avg: count30 ? Math.round(words / count30) : 0,
+          count30,
+          heat,
+        }
+      }, [entries])
+
+      const radius = 26
+      const circumference = 2 * Math.PI * radius
+      const total = Math.max(1, stats.moodTotal)
+      let offset = 0
+      const arcs = stats.moods.map(([mood, count]) => {
+        const length = (count / total) * circumference
+        const arc = { mood, count, length, offset, color: MOOD_COLORS[mood] || MOOD_COLORS.daily }
+        offset += length
+        return arc
+      })
+
+      return h(
+        'div',
+        { className: 'lm-dash', style: { marginBottom: 12 } },
+        h(Tile, { span: 'lm-span-3', label: '日记总数', value: entries.length }),
+        h(Tile, { span: 'lm-span-3', label: '连续写作', value: `${stats.streak} 天`, color: C.brand }),
+        h(Tile, { span: 'lm-span-3', label: '近 30 天', value: stats.count30 }),
+        h(Tile, { span: 'lm-span-3', label: '平均字数', value: stats.avg }),
+
+        h(
+          'div',
+          {
+            className: 'lm-span-6 lm-glass lm-panel lm-spot lm-fade',
+            style: glass({ borderRadius: 14, padding: '12px 14px' }),
+          },
+          h(
+            'div',
+            { className: 'lm-panel-head' },
+            h('span', { style: { color: C.sub, fontSize: 12 } }, '心情分布'),
+            h('span', { style: { color: C.faint, fontSize: 11 } }, '近 30 天 · 点击筛选'),
+          ),
+          h(
+            'div',
+            { style: { display: 'flex', alignItems: 'center', gap: 14, marginTop: 4 } },
+            h(
+              'svg',
+              { width: 80, height: 80, viewBox: '0 0 64 64', className: 'lm-ring', style: { flex: 'none' } },
+              h('circle', {
+                cx: 32,
+                cy: 32,
+                r: radius,
+                fill: 'none',
+                stroke: 'color-mix(in srgb, var(--dsw-alias-border-l1) 55%, transparent)',
+                strokeWidth: 8,
+              }),
+              arcs.map(arc =>
+                h('circle', {
+                  key: arc.mood,
+                  cx: 32,
+                  cy: 32,
+                  r: radius,
+                  fill: 'none',
+                  stroke: arc.color,
+                  strokeWidth: 8,
+                  strokeDasharray: `${arc.length} ${circumference - arc.length}`,
+                  strokeDashoffset: -arc.offset,
+                  transform: 'rotate(-90 32 32)',
+                }),
+              ),
+            ),
+            h(
+              'div',
+              { style: { flex: 1, minWidth: 0 } },
+              arcs.length
+                ? arcs.map(arc =>
+                    h(
+                      'div',
+                      {
+                        key: arc.mood,
+                        className: 'lm-legend',
+                        title: `筛选：${MOOD_LABEL[arc.mood] || arc.mood}`,
+                        onClick: () => onMood && onMood(moodFilter === arc.mood ? '' : arc.mood),
+                        style: {
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          fontSize: 11,
+                          color: C.sub,
+                          lineHeight: '20px',
+                          cursor: 'pointer',
+                          borderRadius: 6,
+                          padding: '0 4px',
+                        },
+                      },
+                      h('span', {
+                        style: { width: 8, height: 8, borderRadius: 3, background: arc.color, flex: 'none' },
+                      }),
+                      h('span', null, `${MOOD_EMOJI[arc.mood] || ''} ${MOOD_LABEL[arc.mood] || arc.mood}`),
+                      h('span', { style: { marginLeft: 'auto', color: C.faint } }, String(arc.count)),
+                    ),
+                  )
+                : h('div', { style: { fontSize: 11, color: C.faint } }, '近 30 天还没有日记'),
+            ),
+          ),
+        ),
+
+        h(
+          'div',
+          {
+            className: 'lm-span-6 lm-glass lm-panel lm-spot lm-fade',
+            style: glass({ borderRadius: 14, padding: '12px 14px' }),
+          },
+          h(
+            'div',
+            { className: 'lm-panel-head' },
+            h('span', { style: { color: C.sub, fontSize: 12 } }, '习惯 Top'),
+            h('span', { style: { color: C.faint, fontSize: 11 } }, '近 30 天'),
+          ),
+          stats.habits.length
+            ? h(BarList, { rows: stats.habits, color: '#7ed6a5' })
+            : h('div', { style: { fontSize: 11, color: C.faint } }, '还没有记录到习惯'),
+        ),
+
+        h(
+          'div',
+          {
+            className: 'lm-span-12 lm-glass lm-panel lm-spot lm-fade',
+            style: glass({ borderRadius: 14, padding: '12px 14px' }),
+          },
+          h(
+            'div',
+            { className: 'lm-panel-head' },
+            h('span', { style: { color: C.sub, fontSize: 12 } }, '写作热力'),
+            h('span', { style: { color: C.faint, fontSize: 11 } }, '最近 5 周 · 点击筛选当天'),
+            dayFilter
+              ? h('span', { style: { marginLeft: 'auto', fontSize: 11, color: C.brand } }, dayFilter)
+              : null,
+          ),
+          h(
+            'div',
+            { style: { display: 'grid', gridTemplateColumns: 'repeat(35, 1fr)', gap: 3, marginTop: 4 } },
+            stats.heat.map(day =>
+              h('div', {
+                key: day.key,
+                className: 'lm-cell',
+                title: `${day.key} · ${day.has ? '有日记' : '没有日记'}`,
+                onClick: () => onDay && onDay(dayFilter === day.key ? '' : day.key),
+                style: {
+                  aspectRatio: '1',
+                  borderRadius: 3,
+                  cursor: 'pointer',
+                  outline: dayFilter === day.key ? `1px solid ${C.brand}` : 'none',
+                  background: day.has
+                    ? `color-mix(in srgb, ${C.brand} 70%, transparent)`
+                    : 'color-mix(in srgb, var(--dsw-alias-border-l1) 32%, transparent)',
+                },
+              }),
+            ),
+          ),
+        ),
+      )
+    }
+
+
     /** Diary: one quiet entry per day, with habits and the fish's comment. */
     function DiaryView() {
       const [state, setState] = useState({ status: 'loading', data: null, error: null })
@@ -2001,6 +2206,8 @@ window.__ModuleLoader__.load({
       const [editingDate, setEditingDate] = useState('')
       const [draft, setDraft] = useState('')
       const [weeklyBusy, setWeeklyBusy] = useState(false)
+      const [moodFilter, setMoodFilter] = useState('')
+      const [dayFilter, setDayFilter] = useState('')
 
       const generateWeekly = useCallback(async force => {
         setWeeklyBusy(true)
@@ -2050,6 +2257,10 @@ window.__ModuleLoader__.load({
       }, [load])
 
       const entries = (state.data && state.data.diary) || []
+      const filteredDiary = entries.filter(
+        entry =>
+          (!moodFilter || (entry.mood || 'daily') === moodFilter) && (!dayFilter || entry.date === dayFilter),
+      )
       const weekly = (state.data && state.data.weekly) || []
       const currentWeekKey = (state.data && state.data.currentWeek) || ''
       const currentWeekly = weekly.find(item => item.week === currentWeekKey)
@@ -2240,6 +2451,51 @@ window.__ModuleLoader__.load({
 
         entries.length
           ? h(
+              Safe,
+              null,
+              h(DiaryDash, {
+                entries,
+                moodFilter,
+                dayFilter,
+                onMood: value => setMoodFilter(value || ''),
+                onDay: value => setDayFilter(value || ''),
+              }),
+            )
+          : null,
+
+        moodFilter || dayFilter
+          ? h(
+              'div',
+              { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' } },
+              moodFilter
+                ? h(Chip, { color: MOOD_COLORS[moodFilter] || C.brand }, `${MOOD_EMOJI[moodFilter] || ''} ${MOOD_LABEL[moodFilter] || moodFilter}`)
+                : null,
+              dayFilter ? h(Chip, { color: C.brand }, dayFilter) : null,
+              h(
+                'button',
+                {
+                  type: 'button',
+                  onClick: () => {
+                    setMoodFilter('')
+                    setDayFilter('')
+                  },
+                  style: {
+                    fontSize: 11,
+                    padding: '1px 8px',
+                    borderRadius: 999,
+                    border: `1px solid ${C.line}`,
+                    background: 'transparent',
+                    color: C.sub,
+                    cursor: 'pointer',
+                  },
+                },
+                '清除筛选',
+              ),
+            )
+          : null,
+
+        entries.length
+          ? h(
               'div',
               {
                 className: 'lm-glass lm-fade',
@@ -2298,7 +2554,7 @@ window.__ModuleLoader__.load({
             )
           : null,
 
-        entries.length === 0
+        filteredDiary.length === 0
           ? h(
               'div',
               {
@@ -2311,9 +2567,11 @@ window.__ModuleLoader__.load({
                   color: C.sub,
                 },
               },
-              '还没有日记。今天先聊几句，日记会自动写出来；也可以点右上角「重写今天」。',
+              entries.length === 0
+                ? '还没有日记。今天先聊几句，日记会自动写出来；也可以点右上角「重写今天」。'
+                : '这个筛选下没有日记。',
             )
-          : entries.map(entry =>
+          : filteredDiary.map(entry =>
               h(
                 'div',
                 {
@@ -2635,6 +2893,31 @@ window.__ModuleLoader__.load({
 
         notice ? h('div', { style: { fontSize: 12, color: C.err, marginBottom: 8 } }, notice) : null,
         state.status === 'error' ? h(ErrorBox, { error: state.error, onRetry: load }) : null,
+
+        editing
+          ? null
+          : h(
+              'div',
+              { className: 'lm-dash', style: { marginBottom: 12 } },
+              h(Tile, { span: 'lm-span-3', label: '人格总数', value: list.length }),
+              h(Tile, {
+                span: 'lm-span-3',
+                label: '自定义',
+                value: list.filter(item => !item.builtin).length,
+                color: C.brand,
+              }),
+              h(Tile, {
+                span: 'lm-span-3',
+                label: '日记总数',
+                value: list.reduce((sum, item) => sum + (item.diaryCount || 0), 0),
+              }),
+              h(Tile, {
+                span: 'lm-span-3',
+                label: '当前人格',
+                value: (list.find(item => item.id === personas.activeId) || {}).emoji || '🐟',
+                sub: (list.find(item => item.id === personas.activeId) || {}).name || '大肥鱼',
+              }),
+            ),
 
         // data table (hidden while the dedicated editor screen is open)
         editing ? null : h(
