@@ -8,6 +8,44 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ---
 
+## [0.24.0] — 2026-11-11
+
+### 新增
+
+- **英文界面**：面板文案改为跟随浏览器语言——非中文环境自动切换英文，覆盖仪表盘、记忆卡片、三个详情页、日记、周报、人格编辑器与设置。
+- 内置约 190 条中英对照词条，外加动态文案的匹配规则（如「已选 3 条」「近 7 天新增」）。
+- 日期格式同步本地化：中文「今天 · 11月4日 周二」，英文「Today · Nov 4 · Tue」，更新时间同样改为「Updated 10:32」。
+
+### 实现
+
+- 在 `h()` 渲染层统一翻译字符串子节点与 `placeholder` / `title` / `alt` 属性，组件代码不必逐句改写；
+- 服务端返回的数据（记忆正文、人格名、错误信息）不参与翻译，保持原样。
+
+### 版本
+
+- `0.23.0` → `0.24.0`。
+
+---
+
+## [0.24.0] — 2026-11-11
+
+### Added
+
+- **English UI**: the panel follows the browser language — non-Chinese locales switch to English across the dashboard, memory cards, all three detail pages, diary, weekly report, persona editor and settings.
+- Roughly 190 bilingual entries plus pattern rules for dynamic labels (e.g. "3 selected", "Added in last 7 days").
+- Dates localise too: "今天 · 11月4日 周二" in Chinese, "Today · Nov 4 · Tue" in English, with "Updated 10:32".
+
+### Implementation
+
+- Translation happens in the `h()` render layer for string children and the `placeholder` / `title` / `alt` props, so components did not need per-string rewrites;
+- Server data (memory text, persona names, error messages) is left untouched.
+
+### Version
+
+- `0.23.0` → `0.24.0`.
+
+---
+
 ## [0.23.0] — 2026-11-11
 
 ### 新增

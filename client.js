@@ -10,8 +10,241 @@ window.__ModuleLoader__.load({
   id: 'dsh-long-memory',
   factory(require) {
     const React = require('react')
-    const h = React.createElement
     const { useCallback, useEffect, useMemo, useState } = React
+
+    const isZh = () => String(navigator.language || '').startsWith('zh')
+
+    /** UI dictionary: Chinese source → English. Only interface labels live here. */
+    const EN = {
+      '全局': 'Global',
+      '工作区': 'Workspace',
+      '已归档': 'Archived',
+      '记忆': 'Memory',
+      '日记': 'Diary',
+      '人格': 'Persona',
+      '编辑': 'Edit',
+      '恢复': 'Restore',
+      '归档': 'Archive',
+      '删除': 'Delete',
+      '保存': 'Save',
+      '保存并启用': 'Save & activate',
+      '全部': 'All',
+      '分布': 'Breakdown',
+      '导入': 'Import',
+      '刷新': 'Refresh',
+      '刷新中…': 'Refreshing…',
+      '取消': 'Cancel',
+      '取消编辑': 'Cancel editing',
+      '取消选择': 'Clear selection',
+      '清空': 'Empty',
+      '合并': 'Merge',
+      '清除': 'Clear',
+      '清除筛选': 'Clear filters',
+      '全选': 'Select all',
+      '模板': 'Templates',
+      '权重': 'Weight',
+      '用户': 'User',
+      '助手': 'Assistant',
+      '配图': 'Image',
+      '自动': 'Auto',
+      '类型': 'Type',
+      '状态': 'Status',
+      '操作': 'Actions',
+      '内置': 'Built-in',
+      '自定义': 'Custom',
+      '启用': 'Activate',
+      '启用中': 'Active',
+      '复制': 'Duplicate',
+      '健康度': 'Health',
+      '活跃度': 'Activity',
+      '已暂停': 'Paused',
+      '记录中': 'Recording',
+      '仅全局': 'Global only',
+      '仅工作区': 'Workspace only',
+      '全部范围': 'All scopes',
+      '大肥鱼': 'Big Fish',
+      '写着…': 'Writing…',
+      '加载中…': 'Loading…',
+      '删除中…': 'Deleting…',
+      '记忆详情': 'Memory detail',
+      '记忆总数': 'Total memories',
+      '累计命中': 'Total hits',
+      '来源明细': 'By source',
+      '最近新增': 'Recently added',
+      '提炼设置': 'Extraction',
+      '自动提炼': 'Auto-extract',
+      '开始回填': 'Start backfill',
+      '历史会话回填': 'History backfill',
+      '日记总数': 'Total diaries',
+      '连续写作': 'Writing streak',
+      '平均字数': 'Avg length',
+      '心情分布': 'Mood mix',
+      '写作热力': 'Writing heatmap',
+      '当天习惯': 'Habits that day',
+      '自动生成': 'Auto',
+      '日常日记': 'Daily diary',
+      '重写今天': "Rewrite today",
+      '本周周报': 'Weekly report',
+      '重新生成': 'Regenerate',
+      '往期周报': 'Past weeks',
+      '最近情绪': 'Recent moods',
+      '操作失败': 'Action failed',
+      '新建人格': 'New persona',
+      '编辑人格': 'Edit persona',
+      '人格总数': 'Total personas',
+      '当前人格': 'Active persona',
+      '风格摘要': 'Style summary',
+      '最近使用': 'Last used',
+      '工作区目录': 'Workspace directory',
+      '（未记录）': '(unrecorded)',
+      '按写入方式': 'By write path',
+      '还没有数据': 'No data yet',
+      '还没有记忆': 'No memories yet',
+      '还没有标签': 'No tags yet',
+      '工作区分布': 'Workspace split',
+      '健康与待办': 'Health & to-dos',
+      '导出 MD': 'Export MD',
+      '轮提炼一次': 'turns',
+      '插入模板': 'Templates:',
+      '人格强调色': 'Persona accent colour',
+      '最新 5 条': 'Latest 5',
+      '标签 Top': 'Top tags',
+      '输入 ¥/M': 'In ¥/M',
+      '输出 ¥/M': 'Out ¥/M',
+      '选择这条记忆': 'Select this memory',
+      '删除这条记忆': 'Delete this memory',
+      '收起对话': 'Hide conversation',
+      '近 30 天': 'Last 30 days',
+      '习惯 Top': 'Top habits',
+      '值得记住的事': 'Worth remembering',
+      '生成本周周报': 'Generate this week',
+      '代码约定': 'Conventions',
+      '项目结构': 'Project structure',
+      '点一条可筛出来': 'Click a row to filter',
+      '标签逗号分隔': 'Tags, comma separated',
+      '点击按标签筛选': 'Click a tag to filter',
+      '只发送用户消息': 'User messages only',
+      '打开独立页 ›': 'Open page ›',
+      '打开这一期周报': 'Open this week',
+      '只看自定义人格': 'Custom personas only',
+      '点击按工作区筛选': 'Click a workspace to filter',
+      '还没有工作区记忆': 'No workspace memories yet',
+      '● 上次提炼成功': '● Last extraction succeeded',
+      '● 上次提炼失败': '● Last extraction failed',
+      '还没有任何记忆。': 'No memories yet.',
+      '没有匹配的记忆。': 'No matching memories.',
+      '还没有记录到习惯': 'No habits recorded yet',
+      '← 返回记忆列表': '← Back to memories',
+      '← 返回日记列表': '← Back to diary',
+      '← 返回人格列表': '← Back to personas',
+      '再点一次显示全部': 'Click again to show all',
+      '最近 24 小时学到': 'Learned in the last 24h',
+      '点击在列表里筛出这条': 'Click to filter this in the list',
+      '搜索记忆内容或标签…': 'Search memories or tags…',
+      '这个筛选下没有日记': 'No diaries match this filter.',
+      '名称如毒舌管家': 'Name, e.g. Snarky Butler',
+      '近 30 天还没有日记': 'No diaries in the last 30 days',
+      'Token / 费用趋势': 'Token / cost trend',
+      '单价可在提炼设置里改': 'Prices are editable under Extraction',
+      '删除的记忆保留 30 天': 'Deleted memories are kept for 30 days',
+      '选择当前筛选出的全部记忆': 'Select every filtered memory',
+      '日记里的留言由当前人格来写': 'The persona writes the comment under each diary',
+      '用模板快速添加一条结构化记忆': 'Insert a structured memory from a template',
+      '最近 5 周 · 点击筛选当天': 'Last 5 weeks · click to filter',
+      '导入之前导出的 JSON 备份': 'Import a previously exported JSON backup',
+      '一句话风格摘要显示在表格里': 'One-line style summary (shown in the table)',
+      '自动记录习惯，大肥鱼会在每篇底下留言': 'Records habits; the persona leaves a comment under each entry',
+      '工作区记录开关（关闭后该项目不再自动提炼）': 'Workspace recording switch (paused workspaces stop auto-extraction)',
+      '技术栈：前端 __、后端 __、数据库 __': 'Stack: frontend __, backend __, database __',
+      '常用命令：pnpm dev / pnpm build / pnpm test': 'Commands: pnpm dev / pnpm build / pnpm test',
+      '代码约定：__': 'Conventions: __',
+      '禁忌：不要 __': 'Never: __',
+      '项目结构：__': 'Structure: __',
+      '装了dshmeme后这里会换成真实表情包': 'Install dsh-meme to swap in real memes',
+      '文案模板，可用 {name} 和 {mood}': 'Caption template, supports {name} and {mood}',
+      '这条记忆没有保存来源对话': 'This memory has no captured conversation.',
+      '这条记忆还没有记录来源对话': 'No source conversation recorded (manual or imported).',
+      '情绪卡（没有表情包时的兜底配图，可只填部分心情）': 'Mood card (fallback art; fill only the moods you want)',
+      '角色设定：口吻、性格、习惯、口头禅……日记会按这个设定来写': 'Persona: voice, personality, habits, catchphrases — diaries follow this.',
+      '扫描所有工作区的旧会话，提炼成记忆（只处理装插件之前的历史）': 'Scan old sessions across every workspace (only history from before the plugin).',
+      '用于估算费用：输入 token 单价（元 / 百万 token）': 'Cost estimate: input price (CNY per million tokens)',
+      '用于估算费用：输出 token 单价（元 / 百万 token）': 'Cost estimate: output price (CNY per million tokens)',
+      '还没有日记。今天先聊几句，日记会自动写出来；也可以点右上角「重写今天」。': 'No diary yet. Chat today and one is written automatically, or use "Rewrite today".',
+      '这周还没生成周报。攒够 2 篇日记后点上面的按钮，会把日记与本周新增记忆归纳成一篇周记。': 'No report this week yet. With two diaries, the button distils the week into one entry.',
+      '每轮对话结束后自动提炼的长期事实。全局记忆在所有项目生效，工作区记忆只对对应目录生效；下方可以搜索、过滤和删除。': 'Facts distilled after each turn. Global memories apply everywhere, workspace memories only in their directory; search, filter and delete below.',
+    }
+
+    /** Dynamic labels: [pattern, replacement]. */
+    const EN_PATTERNS = [
+      [/^(\d+) 条$/, '$1 items'],
+      [/^已选 (\d+) 条$/, '$1 selected'],
+      [/^(.+) · (\d+) 条$/, '$1 · $2 items'],
+      [/^搜索记忆内容或标签…$/, 'Search memories or tags…'],
+      [/^近 (\d+) 天新增$/, 'Added in last $1 days'],
+      [/^近 (\d+) 天$/, 'Last $1 days'],
+      [/^(\d+) 天$/, '$1 days'],
+      [/^(\d+) 篇日记 · 共 (\d+) 篇$/, '$1 of $2 entries'],
+      [/^命中 (\d+) · 权重 ([\d.]+) · (.+)$/, 'hits $1 · weight $2 · $3'],
+      [/^最近 (\d+) 天 · 共 (\d+) 篇日记$/, 'Last $1 days · $2 entries'],
+      [/^共 (\d+) 条$/, '$1 total'],
+      [/^(\d+) 条超过 30 天未更新$/, '$1 rows untouched for 30+ days'],
+      [/^(\d+) 组完全重复 · (\d+) 组疑似重复$/, '$1 exact duplicates · $2 near duplicates'],
+      [/^平均长度 (\d+) 字$/, 'Average length $1 chars'],
+      [/^平均 (\d+) 字$/, 'avg $1 chars'],
+      [/^(.+) 的情绪卡 · (.+)$/, '$1 mood card · $2'],
+      [/^更新于 (.+)$/, 'Updated $1'],
+      [/^今天 · (.*)$/, 'Today · $1'],
+      [/^昨天 · (.*)$/, 'Yesterday · $1'],
+      [/^已选 (\d+) 条$/, '$1 selected'],
+      [/^会话 (\d+)\/(\d+) · 新增 (\d+) · 合并 (\d+) · 跳过 (\d+)(.*)$/, 'sessions $1/$2 · added $3 · merged $4 · skipped $5$6'],
+      [/^记忆 (\d+) 条$/, '$1 memories'],
+      [/^(\d+) 条$/, '$1 items'],
+      [/^(\d+) 个会话$/, '$1 sessions'],
+      [/^(\d+) 条 · (\d+) 个会话$/, '$1 items · $2 sessions'],
+      [/^(\d+) 条超过 30 天$/, '$1 older than 30 days'],
+      [/^来源 (.+)$/, 'source $1'],
+      [/^共 (\d+) 条日记$/, '$1 diary entries'],
+    ]
+
+    function tr(text) {
+      if (typeof text !== 'string' || !text || isZh()) return text
+      const exact = EN[text]
+      if (exact !== undefined) return exact
+      for (const [pattern, replacement] of EN_PATTERNS) {
+        if (pattern.test(text)) return text.replace(pattern, replacement)
+      }
+      return text
+    }
+
+    const PROPS_TO_TRANSLATE = ['placeholder', 'title', 'alt', 'aria-label']
+
+    function translateProps(props) {
+      if (!props || typeof props !== 'object' || isZh()) return props
+      let changed = false
+      const next = { ...props }
+      for (const key of PROPS_TO_TRANSLATE) {
+        if (typeof next[key] === 'string') {
+          const value = tr(next[key])
+          if (value !== next[key]) {
+            next[key] = value
+            changed = true
+          }
+        }
+      }
+      return changed ? next : props
+    }
+
+    /** createElement that localises string children and text-bearing props. */
+    const h = (type, props, ...children) => {
+      const nextChildren = children.map(child => {
+        if (typeof child === 'string') return tr(child)
+        if (Array.isArray(child)) return child.map(item => (typeof item === 'string' ? tr(item) : item))
+        return child
+      })
+      return React.createElement(type, translateProps(props), ...nextChildren)
+    }
+
+    /** Collapse whitespace, strip list markers, cap length. */
 
     const API = '/dsh-long-memory/data'
 
@@ -40,24 +273,28 @@ window.__ModuleLoader__.load({
     const MOOD_EMOJI = { happy: '😊', angry: '😠', sad: '😢', shy: '😳', confused: '😕', daily: '😐' }
     const MOOD_LABEL = { happy: '开心', angry: '生气', sad: '难过', shy: '害羞', confused: '困惑', daily: '日常' }
     const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+    const WEEKDAYS_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+    const MONTHS_EN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
     const MOOD_DAYS = 14
     const MOOD_KEYS = ['happy', 'angry', 'sad', 'shy', 'confused', 'daily']
 
-    /** "今天 · 11月4日 周二" plus the update time, from a date key. */
+    /** "今天 · 11月4日 周二" / "Today · Nov 4 · Tue", plus the update time. */
     function entryDateText(dateStr, updatedAt) {
       const [year, month, day] = String(dateStr || '').split('-').map(Number)
       const date = new Date(year || 1970, (month || 1) - 1, day || 1)
       const now = new Date()
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
       const diff = Math.round((today - date) / 86400000)
-      const prefix = diff === 0 ? '今天' : diff === 1 ? '昨天' : ''
-      const weekday = WEEKDAYS[date.getDay()]
+      const zh = isZh()
+      const prefix = diff === 0 ? (zh ? '今天' : 'Today') : diff === 1 ? (zh ? '昨天' : 'Yesterday') : ''
+      const weekday = zh ? WEEKDAYS[date.getDay()] : WEEKDAYS_EN[date.getDay()]
+      const dateLabel = zh ? `${month}月${day}日 ${weekday}` : `${MONTHS_EN[date.getMonth()]} ${day} · ${weekday}`
       const time = updatedAt
-        ? new Date(updatedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+        ? new Date(updatedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
         : ''
       return {
-        title: `${prefix ? `${prefix} · ` : ''}${month}月${day}日 ${weekday}`,
-        updated: time ? `更新于 ${time}` : '',
+        title: `${prefix ? `${prefix} · ` : ''}${dateLabel}`,
+        updated: time ? (zh ? `更新于 ${time}` : `Updated ${time}`) : '',
       }
     }
 
@@ -77,7 +314,9 @@ window.__ModuleLoader__.load({
           mood,
           color: MOOD_COLORS[mood] || C.line,
           dayLabel: String(date.getDate()),
-          full: `${date.getMonth() + 1}月${date.getDate()}日 ${WEEKDAYS[date.getDay()]}`,
+          full: isZh()
+            ? `${date.getMonth() + 1}月${date.getDate()}日 ${WEEKDAYS[date.getDay()]}`
+            : `${MONTHS_EN[date.getMonth()]} ${date.getDate()} · ${WEEKDAYS_EN[date.getDay()]}`,
         })
       }
       return days
