@@ -8,6 +8,50 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ---
 
+## [0.17.0] — 2026-11-11
+
+### 变更
+
+- **仪表盘重排**：12 栅格 bento 布局——6 个指标块一排，下面依次是「近 N 天新增（8 列）」「分布（4 列）」「标签 Top / 活跃度」「工作区分布 / 健康与待办」，窄屏自动折成两列。
+
+### 新增
+
+- **实时与交互**：
+  - 时间范围分段控件（7 天 / 14 天 / 30 天 / 全部）即时重算柱状图与统计；
+  - 点击任意日期柱或热力格 → 记忆列表按那天筛选，出现「日期」小标签，可一键清除；
+  - 点击标签条 → 搜索框自动填入 `tag:xxx`；
+  - 点击圆环图例（全局 / 工作区 / 已归档）→ 按范围或归档筛选；
+  - 面板每 20 秒静默刷新一次，标题栏带呼吸绿点提示；
+  - 柱状图、热力格、健康环都带过渡动画，悬停有放大与高亮。
+
+### 版本
+
+- `0.16.0` → `0.17.0`。
+
+---
+
+## [0.17.0] — 2026-11-11
+
+### Changed
+
+- **Dashboard re-laid out** as a 12-column bento grid: six metric tiles on top, then "last N days (8 cols)", "distribution (4 cols)", "tags / activity", and "workspaces / health"; narrow screens collapse to two columns.
+
+### Added
+
+- **Live and interactive**:
+  - a segmented range control (7 / 14 / 30 days / all) recomputes the chart and figures instantly;
+  - clicking a bar or a heatmap cell filters the memory list to that day, with a removable date chip;
+  - clicking a tag bar fills the search box with `tag:xxx`;
+  - clicking a donut legend (global / workspace / archived) filters by scope or archive state;
+  - the panel refreshes quietly every 20 seconds, shown by a pulsing green dot in the header;
+  - bars, heat cells and the health ring animate, with hover scale and highlight.
+
+### Version
+
+- `0.16.0` → `0.17.0`.
+
+---
+
 ## [0.16.0] — 2026-11-11
 
 ### 新增

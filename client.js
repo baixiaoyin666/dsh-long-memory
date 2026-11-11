@@ -175,6 +175,30 @@ window.__ModuleLoader__.load({
         background: linear-gradient(90deg, transparent, rgba(255,255,255,.14), transparent);
         animation: lm-shimmer 1.4s ease-in-out infinite;
       }
+
+      /* dashboard bento */
+      .lm-dash { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 10px }
+      .lm-dash > .lm-span-2 { grid-column: span 2 }
+      .lm-dash > .lm-span-4 { grid-column: span 4 }
+      .lm-dash > .lm-span-6 { grid-column: span 6 }
+      .lm-dash > .lm-span-8 { grid-column: span 8 }
+      .lm-panel { display: flex; flex-direction: column; gap: 6px; min-width: 0 }
+      .lm-panel-head { display: flex; align-items: center; gap: 6px; min-width: 0 }
+      .lm-bar { transition: height .55s cubic-bezier(.2,.7,.3,1), background .2s ease, opacity .2s ease }
+      .lm-bar:hover { background: var(--dsw-alias-brand-primary) !important }
+      .lm-cell { transition: transform .16s ease, box-shadow .16s ease, outline-color .2s ease }
+      .lm-cell:hover { transform: scale(1.16); box-shadow: 0 0 0 2px var(--dsw-alias-brand-primary) }
+      .lm-seg { display: inline-flex; align-items: center; padding: 2px; gap: 2px; border-radius: 999px; background: color-mix(in srgb, var(--dsw-alias-border-l1) 35%, transparent) }
+      .lm-seg button { border: none; background: transparent; color: inherit; font-size: 11px; line-height: 16px; padding: 2px 8px; border-radius: 999px; cursor: pointer; transition: background .18s ease, color .18s ease }
+      .lm-seg button:hover { background: color-mix(in srgb, var(--dsw-alias-border-l1) 45%, transparent) }
+      .lm-seg button.active { background: var(--dsw-alias-brand-primary); color: #fff }
+      .lm-legend { transition: background .16s ease }
+      .lm-legend:hover { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 12%, transparent) }
+      .lm-live-dot { width: 6px; height: 6px; border-radius: 999px; background: #3fb950; margin-left: auto; flex: none }
+      @media (max-width: 760px) {
+        .lm-dash { grid-template-columns: repeat(2, minmax(0, 1fr)) }
+        .lm-dash > * { grid-column: span 2 !important }
+      }
     `
 
     function Motion() {
@@ -340,7 +364,7 @@ window.__ModuleLoader__.load({
       return h(
         'div',
         {
-          className: 'lm-tilt lm-spot lm-glass lm-fade',
+          className: `${props.span || ''} lm-tilt lm-spot lm-glass lm-fade`,
           style: glass({ borderRadius: 14, padding: '12px 14px', minWidth: 0 }),
           ...tiltProps(),
         },
@@ -366,7 +390,18 @@ window.__ModuleLoader__.load({
             'div',
             {
               key: `${label}-${index}`,
-              style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 },
+              className: props.onPick ? 'lm-row' : '',
+              onClick: props.onPick ? () => props.onPick(label) : undefined,
+              title: props.onPick ? `筛选：${label}` : label,
+              style: {
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                marginBottom: 6,
+                cursor: props.onPick ? 'pointer' : 'default',
+                borderRadius: 6,
+                padding: '0 4px',
+              },
             },
             h(
               'div',
@@ -410,9 +445,10 @@ window.__ModuleLoader__.load({
       )
     }
 
-    /** The statistics dashboard: tiles, 14-day chart, split donut, tags, heatmap. */
+    /** The statistics dashboard: bento panels with live, clickable charts. */
     function Dashboard(props) {
-      const { analysis, entries } = props
+      const { analysis, entries, range, onRange, dayFilter, onDay, onScope, onTag } = props
+      const daysSpan = range > 0 ? range : 90
       const stats = useMemo(() => {
         const dayKeyOf = ts => {
           const date = new Date(ts)
@@ -420,7 +456,7 @@ window.__ModuleLoader__.load({
         }
         const now = new Date()
         const days = []
-        for (let offset = 13; offset >= 0; offset -= 1) {
+        for (let offset = daysSpan - 1; offset >= 0; offset -= 1) {
           const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - offset)
           days.push({ key: dayKeyOf(date.getTime()), label: `${date.getMonth() + 1}/${date.getDate()}`, count: 0 })
         }
@@ -432,6 +468,7 @@ window.__ModuleLoader__.load({
         let archived = 0
         let globalCount = 0
         let workspaceCount = 0
+        let inRange = 0
         for (const entry of entries) {
           if (entry.archived) archived += 1
           if (entry.scope === 'global') globalCount += 1
@@ -445,7 +482,10 @@ window.__ModuleLoader__.load({
           sources.set(source, (sources.get(source) || 0) + 1)
           for (const tag of entry.tags || []) tags.set(tag, (tags.get(tag) || 0) + 1)
           const slot = dayIndex.get(dayKeyOf(entry.createdAt || 0))
-          if (slot) slot.count += 1
+          if (slot) {
+            slot.count += 1
+            inRange += 1
+          }
         }
         const heat = []
         for (let offset = 34; offset >= 0; offset -= 1) {
@@ -464,19 +504,30 @@ window.__ModuleLoader__.load({
           archived,
           globalCount,
           workspaceCount,
+          inRange,
           sources: [...sources].sort((a, b) => b[1] - a[1]),
-          tags: [...tags].sort((a, b) => b[1] - a[1]).slice(0, 8),
+          tags: [...tags].sort((a, b) => b[1] - a[1]).slice(0, 7),
           workspaces: [...workspaces].sort((a, b) => b[1] - a[1]).slice(0, 5),
         }
-      }, [entries])
+      }, [entries, daysSpan])
 
       const total = Math.max(1, entries.length)
       const radius = 26
       const circumference = 2 * Math.PI * radius
       const segments = [
-        { label: '全局', value: stats.globalCount, color: C.brand },
-        { label: '工作区', value: stats.workspaceCount, color: '#b08cff' },
-        { label: '已归档', value: stats.archived, color: 'color-mix(in srgb, var(--dsw-alias-border-l1) 80%, transparent)' },
+        { label: '全局', value: stats.globalCount, color: C.brand, pick: () => onScope && onScope('global') },
+        {
+          label: '工作区',
+          value: stats.workspaceCount,
+          color: '#b08cff',
+          pick: () => onScope && onScope('workspace'),
+        },
+        {
+          label: '已归档',
+          value: stats.archived,
+          color: 'color-mix(in srgb, var(--dsw-alias-border-l1) 80%, transparent)',
+          pick: () => onTag && onTag('archived:true'),
+        },
       ].filter(segment => segment.value > 0)
       let offset = 0
       const arcs = segments.map(segment => {
@@ -485,355 +536,298 @@ window.__ModuleLoader__.load({
         offset += length
         return arc
       })
-
       const maxBar = stats.days.reduce((top, day) => Math.max(top, day.count), 1)
       const heatMax = stats.heat.reduce((top, day) => Math.max(top, day.count), 1)
       const healthColor = analysis.health >= 80 ? C.ok : analysis.health >= 50 ? C.warn : C.err
+      const rangeLabel = range === 0 ? '全部' : `${range} 天`
+
+      const panel = (span, headParts, body) =>
+        h(
+          'div',
+          {
+            className: `${span} lm-glass lm-panel lm-spot lm-fade`,
+            style: glass({ borderRadius: 14, padding: '12px 14px' }),
+          },
+          h('div', { className: 'lm-panel-head' }, ...headParts),
+          body,
+        )
+
+      const headText = text => h('span', { style: { color: C.sub, fontSize: 12 } }, text)
+      const headMeta = text => h('span', { style: { color: C.faint, fontSize: 11 } }, text)
 
       return h(
-        React.Fragment,
-        null,
-        h(
-          'div',
-          {
-            style: {
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(112px, 1fr))',
-              gap: 10,
-              marginBottom: 12,
-            },
-          },
-          h(Tile, { label: '记忆总数', value: analysis.total }),
-          h(Tile, { label: '全局', value: analysis.global }),
-          h(Tile, { label: '工作区', value: analysis.workspace }),
-          h(Tile, { label: '已归档', value: stats.archived, color: C.faint }),
-          h(Tile, { label: '累计命中', value: stats.hits, color: C.brand }),
-        ),
+        'div',
+        { className: 'lm-dash', style: { marginBottom: 12 } },
+        h(Tile, { span: 'lm-span-2', label: '记忆总数', value: analysis.total }),
+        h(Tile, { span: 'lm-span-2', label: '全局', value: analysis.global }),
+        h(Tile, { span: 'lm-span-2', label: '工作区', value: analysis.workspace }),
+        h(Tile, { span: 'lm-span-2', label: '已归档', value: stats.archived, color: C.faint }),
+        h(Tile, { span: 'lm-span-2', label: '累计命中', value: stats.hits, color: C.brand }),
+        h(Tile, {
+          span: 'lm-span-2',
+          label: '健康度',
+          value: analysis.health,
+          color: healthColor,
+          sub: `平均 ${analysis.avgLength} 字`,
+        }),
 
-        h(
-          'div',
-          {
-            style: {
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-              gap: 10,
-              marginBottom: 12,
-            },
-          },
-          h(
-            'div',
-            {
-              className: 'lm-glass lm-fade',
-              style: glass({ borderRadius: 14, padding: '12px 14px' }),
-            },
+        panel(
+          'lm-span-8',
+          [
+            headText(`近 ${rangeLabel}新增`),
+            headMeta(`${stats.inRange} 条`),
             h(
               'div',
-              { style: { display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 } },
-              h('div', { style: { fontSize: 12, color: C.sub } }, '近 14 天新增'),
-              h('div', { style: { fontSize: 11, color: C.faint, marginLeft: 'auto' } }, `累计 ${entries.length} 条`),
-            ),
-            h(
-              'div',
-              { style: { display: 'flex', alignItems: 'flex-end', gap: 4, height: 72 } },
-              stats.days.map(day =>
+              { className: 'lm-seg', style: { marginLeft: 'auto' } },
+              [
+                [7, '7 天'],
+                [14, '14 天'],
+                [30, '30 天'],
+                [0, '全部'],
+              ].map(([value, label]) =>
                 h(
-                  'div',
+                  'button',
                   {
-                    key: day.key,
-                    title: `${day.label} · ${day.count} 条`,
-                    style: {
-                      flex: 1,
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'flex-end',
-                      height: '100%',
-                    },
+                    key: label,
+                    type: 'button',
+                    className: range === value ? 'active' : '',
+                    onClick: () => onRange && onRange(value),
                   },
-                  h('div', {
-                    style: {
-                      height: `${Math.max(2, Math.round((day.count / maxBar) * 100))}%`,
-                      borderRadius: 4,
-                      background: day.count ? C.brand : 'color-mix(in srgb, var(--dsw-alias-border-l1) 45%, transparent)',
-                      opacity: day.count ? 0.85 : 1,
-                    },
-                  }),
+                  label,
                 ),
               ),
             ),
-            h(
-              'div',
-              { style: { display: 'flex', gap: 4, marginTop: 6 } },
-              stats.days.map(day =>
-                h(
-                  'div',
-                  {
-                    key: `${day.key}-label`,
-                    style: { flex: 1, textAlign: 'center', fontSize: 9, color: C.faint },
-                  },
-                  day.label,
-                ),
-              ),
-            ),
-          ),
-
+          ],
           h(
             'div',
-            {
-              className: 'lm-glass lm-fade',
-              style: glass({ borderRadius: 14, padding: '12px 14px' }),
-            },
-            h('div', { style: { fontSize: 12, color: C.sub, marginBottom: 8 } }, '分布'),
-            h(
-              'div',
-              { style: { display: 'flex', alignItems: 'center', gap: 14 } },
-              h(
-                'svg',
-                { width: 72, height: 72, viewBox: '0 0 64 64', style: { flex: 'none' } },
-                h('circle', {
-                  cx: 32,
-                  cy: 32,
-                  r: radius,
-                  fill: 'none',
-                  stroke: 'color-mix(in srgb, var(--dsw-alias-border-l1) 55%, transparent)',
-                  strokeWidth: 8,
-                }),
-                arcs.map(arc =>
-                  h('circle', {
-                    key: arc.label,
-                    cx: 32,
-                    cy: 32,
-                    r: radius,
-                    fill: 'none',
-                    stroke: arc.color,
-                    strokeWidth: 8,
-                    strokeDasharray: `${arc.length} ${circumference - arc.length}`,
-                    strokeDashoffset: -arc.offset,
-                    transform: 'rotate(-90 32 32)',
-                  }),
-                ),
-              ),
-              h(
-                'div',
-                { style: { flex: 1, minWidth: 0 } },
-                segments.map(segment =>
-                  h(
-                    'div',
-                    {
-                      key: segment.label,
-                      style: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: C.sub, lineHeight: '20px' },
-                    },
-                    h('span', {
-                      style: { width: 8, height: 8, borderRadius: 3, background: segment.color, flex: 'none' },
-                    }),
-                    h('span', null, segment.label),
-                    h('span', { style: { marginLeft: 'auto', color: C.faint } }, String(segment.value)),
-                  ),
-                ),
-                h(
-                  'div',
-                  { style: { fontSize: 11, color: C.faint, marginTop: 4 } },
-                  `来源：${stats.sources.map(([name, count]) => `${name} ${count}`).join(' · ') || '暂无'}`,
-                ),
-              ),
-            ),
-          ),
-        ),
-
-        h(
-          'div',
-          {
-            style: {
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-              gap: 10,
-              marginBottom: 12,
-            },
-          },
-          h(
-            'div',
-            {
-              className: 'lm-glass lm-fade',
-              style: glass({ borderRadius: 14, padding: '12px 14px' }),
-            },
-            h('div', { style: { fontSize: 12, color: C.sub, marginBottom: 8 } }, '标签 Top'),
-            stats.tags.length
-              ? h(BarList, { rows: stats.tags, color: C.brand })
-              : h('div', { style: { fontSize: 11, color: C.faint } }, '还没有标签'),
-          ),
-
-          h(
-            'div',
-            {
-              className: 'lm-glass lm-fade',
-              style: glass({ borderRadius: 14, padding: '12px 14px' }),
-            },
-            h(
-              'div',
-              { style: { display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 } },
-              h('div', { style: { fontSize: 12, color: C.sub } }, '活跃度'),
-              h('div', { style: { fontSize: 11, color: C.faint, marginLeft: 'auto' } }, '最近 5 周'),
-            ),
-            h(
-              'div',
-              {
-                style: {
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(7, 1fr)',
-                  gap: 3,
-                },
-              },
-              stats.heat.map(day =>
-                h('div', {
-                  key: day.key,
-                  title: `${day.key} · ${day.count} 条`,
-                  style: {
-                    aspectRatio: '1',
-                    borderRadius: 3,
-                    background: day.count
-                      ? `color-mix(in srgb, ${C.brand} ${Math.min(90, 18 + (day.count / heatMax) * 72)}%, transparent)`
-                      : 'color-mix(in srgb, var(--dsw-alias-border-l1) 35%, transparent)',
-                  },
-                }),
-              ),
-            ),
-          ),
-        ),
-
-        h(
-          'div',
-          {
-            style: {
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-              gap: 10,
-              marginBottom: 12,
-            },
-          },
-          h(
-            'div',
-            {
-              className: 'lm-tilt lm-spot lm-glass lm-fade',
-              style: glass({ borderRadius: 14, padding: '14px' }),
-              ...tiltProps(),
-            },
-            h(
-              'div',
-              { style: { display: 'flex', alignItems: 'center', gap: 14 } },
-              h(
-                'svg',
-                { width: 60, height: 60, viewBox: '0 0 64 64', className: 'lm-ring', style: { flex: 'none' } },
-                h('circle', {
-                  cx: 32,
-                  cy: 32,
-                  r: radius,
-                  fill: 'none',
-                  stroke: 'color-mix(in srgb, var(--dsw-alias-border-l1) 65%, transparent)',
-                  strokeWidth: 6,
-                }),
-                h('circle', {
-                  cx: 32,
-                  cy: 32,
-                  r: radius,
-                  fill: 'none',
-                  stroke: healthColor,
-                  strokeWidth: 6,
-                  strokeLinecap: 'round',
-                  strokeDasharray: `${circumference}`,
-                  strokeDashoffset: `${circumference * (1 - analysis.health / 100)}`,
-                  transform: 'rotate(-90 32 32)',
-                }),
-              ),
-              h(
-                'div',
-                { style: { flex: 1, minWidth: 0 } },
-                h(
-                  'div',
-                  { style: { display: 'flex', alignItems: 'baseline', gap: 8 } },
-                  h('div', { style: { fontSize: 13, fontWeight: 600 } }, '记忆健康度'),
-                  h('div', { style: { fontSize: 20, fontWeight: 700, color: healthColor } }, `${analysis.health}`),
-                  h('div', { style: { fontSize: 12, color: C.faint } }, '/ 100'),
-                ),
-                h(
-                  'div',
-                  { style: { fontSize: 12, color: C.faint, marginTop: 4 } },
-                  `平均 ${analysis.avgLength} 字 · ${analysis.stale30d} 条超过 30 天`,
-                ),
-              ),
-            ),
-            analysis.issues.slice(0, 3).map((issue, index) =>
+            { style: { display: 'flex', alignItems: 'flex-end', gap: 3, height: 92, marginTop: 4 } },
+            stats.days.map(day =>
               h(
                 'div',
                 {
-                  key: `issue-${index}`,
-                  style: { display: 'flex', gap: 8, fontSize: 12, color: C.sub, lineHeight: '19px', marginTop: 6 },
-                },
-                h('span', {
+                  key: day.key,
+                  title: `${day.label} · ${day.count} 条（点击筛选）`,
+                  onClick: () => onDay && onDay(day.key),
                   style: {
-                    width: 6,
-                    height: 6,
-                    borderRadius: 999,
-                    background: LEVEL_COLOR[issue.level] || C.sub,
-                    marginTop: 6,
-                    flex: 'none',
+                    flex: 1,
+                    height: '100%',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'flex-end',
+                    cursor: 'pointer',
+                  },
+                },
+                h('div', {
+                  className: 'lm-bar',
+                  style: {
+                    height: `${Math.max(3, Math.round((day.count / maxBar) * 100))}%`,
+                    borderRadius: 4,
+                    background:
+                      dayFilter === day.key
+                        ? C.brand
+                        : day.count
+                          ? `color-mix(in srgb, ${C.brand} 78%, transparent)`
+                          : 'color-mix(in srgb, var(--dsw-alias-border-l1) 45%, transparent)',
                   },
                 }),
-                h('span', null, issue.text),
               ),
             ),
           ),
-
           h(
             'div',
-            {
-              className: 'lm-glass lm-fade',
-              style: glass({ borderRadius: 14, padding: '12px 14px' }),
-            },
-            h('div', { style: { fontSize: 12, color: C.sub, marginBottom: 8 } }, '工作区分布'),
-            stats.workspaces.length
-              ? h(BarList, { rows: stats.workspaces, color: '#b08cff' })
-              : h('div', { style: { fontSize: 11, color: C.faint } }, '还没有工作区记忆'),
+            { style: { display: 'flex', gap: 3, marginTop: 6 } },
+            stats.days.map(day =>
+              h(
+                'div',
+                {
+                  key: `${day.key}-l`,
+                  style: { flex: 1, textAlign: 'center', fontSize: 9, color: C.faint, whiteSpace: 'nowrap' },
+                },
+                stats.days.length <= 14 ? day.label : '',
+              ),
+            ),
+          ),
+        ),
+
+        panel(
+          'lm-span-4',
+          [headText('分布'), headMeta('点击筛选')],
+          h(
+            'div',
+            { style: { display: 'flex', alignItems: 'center', gap: 14, marginTop: 4 } },
+            h(
+              'svg',
+              { width: 84, height: 84, viewBox: '0 0 64 64', className: 'lm-ring', style: { flex: 'none' } },
+              h('circle', {
+                cx: 32,
+                cy: 32,
+                r: radius,
+                fill: 'none',
+                stroke: 'color-mix(in srgb, var(--dsw-alias-border-l1) 55%, transparent)',
+                strokeWidth: 8,
+              }),
+              arcs.map(arc =>
+                h('circle', {
+                  key: arc.label,
+                  cx: 32,
+                  cy: 32,
+                  r: radius,
+                  fill: 'none',
+                  stroke: arc.color,
+                  strokeWidth: 8,
+                  strokeDasharray: `${arc.length} ${circumference - arc.length}`,
+                  strokeDashoffset: -arc.offset,
+                  transform: 'rotate(-90 32 32)',
+                }),
+              ),
+            ),
+            h(
+              'div',
+              { style: { flex: 1, minWidth: 0 } },
+              segments.map(segment =>
+                h(
+                  'div',
+                  {
+                    key: segment.label,
+                    className: 'lm-legend',
+                    onClick: segment.pick,
+                    title: `筛选：${segment.label}`,
+                    style: {
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      fontSize: 11,
+                      color: C.sub,
+                      lineHeight: '20px',
+                      cursor: 'pointer',
+                      borderRadius: 6,
+                      padding: '0 4px',
+                    },
+                  },
+                  h('span', {
+                    style: { width: 8, height: 8, borderRadius: 3, background: segment.color, flex: 'none' },
+                  }),
+                  h('span', null, segment.label),
+                  h('span', { style: { marginLeft: 'auto', color: C.faint } }, String(segment.value)),
+                ),
+              ),
+            ),
+          ),
+          h(
+            'div',
+            { style: { fontSize: 10, color: C.faint, marginTop: 6, lineHeight: '15px' } },
+            `来源：${stats.sources.map(([name, count]) => `${name} ${count}`).join(' · ') || '暂无'}`,
+          ),
+        ),
+
+        panel(
+          'lm-span-6',
+          [headText('标签 Top'), headMeta('点击按标签筛选')],
+          stats.tags.length
+            ? h(BarList, {
+                rows: stats.tags,
+                color: C.brand,
+                onPick: label => onTag && onTag(`tag:${label}`),
+              })
+            : h('div', { style: { fontSize: 11, color: C.faint } }, '还没有标签'),
+        ),
+
+        panel(
+          'lm-span-6',
+          [headText('活跃度'), headMeta('最近 5 周 · 点击筛选当天')],
+          h(
+            'div',
+            { style: { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3, marginTop: 4 } },
+            stats.heat.map(day =>
+              h('div', {
+                key: day.key,
+                className: 'lm-cell',
+                title: `${day.key} · ${day.count} 条（点击筛选）`,
+                onClick: () => onDay && onDay(day.key),
+                style: {
+                  aspectRatio: '1',
+                  borderRadius: 3,
+                  cursor: 'pointer',
+                  outline: dayFilter === day.key ? `1px solid ${C.brand}` : 'none',
+                  background: day.count
+                    ? `color-mix(in srgb, ${C.brand} ${Math.min(92, 20 + (day.count / heatMax) * 72)}%, transparent)`
+                    : 'color-mix(in srgb, var(--dsw-alias-border-l1) 32%, transparent)',
+                },
+              }),
+            ),
+          ),
+        ),
+
+        panel(
+          'lm-span-6',
+          [headText('工作区分布'), headMeta(`${analysis.workspaces.length} 个工作区`)],
+          stats.workspaces.length
+            ? h(BarList, { rows: stats.workspaces, color: '#b08cff' })
+            : h('div', { style: { fontSize: 11, color: C.faint } }, '还没有工作区记忆'),
+        ),
+
+        panel(
+          'lm-span-6',
+          [headText('健康与待办'), h('span', { style: { color: healthColor, fontSize: 11, marginLeft: 'auto' } }, `${analysis.health}/100`)],
+          h(
+            'div',
+            { style: { display: 'flex', alignItems: 'center', gap: 12, marginTop: 4 } },
+            h(
+              'svg',
+              { width: 52, height: 52, viewBox: '0 0 64 64', className: 'lm-ring', style: { flex: 'none' } },
+              h('circle', {
+                cx: 32,
+                cy: 32,
+                r: radius,
+                fill: 'none',
+                stroke: 'color-mix(in srgb, var(--dsw-alias-border-l1) 65%, transparent)',
+                strokeWidth: 6,
+              }),
+              h('circle', {
+                cx: 32,
+                cy: 32,
+                r: radius,
+                fill: 'none',
+                stroke: healthColor,
+                strokeWidth: 6,
+                strokeLinecap: 'round',
+                strokeDasharray: `${circumference}`,
+                strokeDashoffset: `${circumference * (1 - analysis.health / 100)}`,
+                transform: 'rotate(-90 32 32)',
+              }),
+            ),
+            h(
+              'div',
+              { style: { flex: 1, minWidth: 0, fontSize: 11, color: C.sub, lineHeight: '17px' } },
+              h('div', null, `${analysis.stale30d} 条超过 30 天未更新`),
+              h('div', null, `${analysis.duplicates.length} 组完全重复 · ${analysis.pairs.length} 组疑似重复`),
+              h('div', null, `平均长度 ${analysis.avgLength} 字`),
+            ),
+          ),
+          analysis.issues.slice(0, 2).map((issue, index) =>
+            h(
+              'div',
+              {
+                key: `issue-${index}`,
+                style: { display: 'flex', gap: 6, fontSize: 11, color: C.sub, lineHeight: '17px', marginTop: 4 },
+              },
+              h('span', {
+                style: {
+                  width: 5,
+                  height: 5,
+                  borderRadius: 999,
+                  background: LEVEL_COLOR[issue.level] || C.sub,
+                  marginTop: 6,
+                  flex: 'none',
+                },
+              }),
+              h('span', null, issue.text),
+            ),
           ),
         ),
       )
     }
 
-    function ErrorBox(props) {
-      return h(
-        'div',
-        {
-          style: {
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            padding: '10px 12px',
-            borderRadius: 10,
-            border: `1px solid ${C.err}`,
-            color: C.err,
-            fontSize: 13,
-            marginBottom: 12,
-          },
-        },
-        h('span', { style: { flex: 1, wordBreak: 'break-word' } }, `读取失败：${props.error}`),
-        h(
-          'button',
-          {
-            type: 'button',
-            onClick: props.onRetry,
-            style: {
-              fontSize: 12,
-              color: C.err,
-              background: 'transparent',
-              border: `1px solid ${C.err}`,
-              borderRadius: 8,
-              padding: '4px 10px',
-              cursor: 'pointer',
-              flex: 'none',
-            },
-          },
-          '重试',
-        ),
-      )
-    }
 
     /** The full dashboard: statistics, health analysis and the memory list. */
     function Panel(props) {
@@ -845,6 +839,8 @@ window.__ModuleLoader__.load({
       const [selected, setSelected] = useState([])
       const [editId, setEditId] = useState('')
       const [editForm, setEditForm] = useState(null)
+      const [range, setRange] = useState(14)
+      const [dayFilter, setDayFilter] = useState('')
 
       useEffect(() => {
         load()
@@ -1020,6 +1016,13 @@ window.__ModuleLoader__.load({
         return () => clearInterval(timer)
       }, [backfill.running, load])
 
+      useEffect(() => {
+        const timer = setInterval(() => {
+          load()
+        }, 20000)
+        return () => clearInterval(timer)
+      }, [load])
+
       const filtered = useMemo(() => {
         const spec = { tag: '', scope: '', archived: false, before: 0 }
         const words = []
@@ -1031,8 +1034,13 @@ window.__ModuleLoader__.load({
           else if (token.startsWith('before:')) spec.before = Date.parse(token.slice(7)) || 0
           else words.push(token)
         }
+        const dayKeyOf = ts => {
+          const date = new Date(ts)
+          return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+        }
         const needle = words.join(' ').toLowerCase()
         return entries.filter(entry => {
+          if (dayFilter && dayKeyOf(entry.createdAt || 0) !== dayFilter) return false
           if (!spec.archived && entry.archived) return false
           if (scope !== 'all' && entry.scope !== scope) return false
           if (spec.scope && entry.scope !== spec.scope) return false
@@ -1042,7 +1050,7 @@ window.__ModuleLoader__.load({
           const haystack = `${entry.text} ${(entry.tags || []).join(' ')} ${entry.workspace || ''}`.toLowerCase()
           return haystack.includes(needle)
         })
-      }, [entries, query, scope])
+      }, [entries, query, scope, dayFilter])
 
       const healthColor = analysis
         ? analysis.health >= 80
@@ -1150,7 +1158,23 @@ window.__ModuleLoader__.load({
 
               state.status === 'error' ? h(ErrorBox, { error: state.error, onRetry: load }) : null,
 
-              h(Safe, null, h(Dashboard, { analysis, entries })),
+              h(
+                Safe,
+                null,
+                h(Dashboard, {
+                  analysis,
+                  entries,
+                  range,
+                  dayFilter,
+                  onRange: value => setRange(value),
+                  onDay: key => setDayFilter(previous => (previous === key ? '' : key)),
+                  onScope: value => setScope(value),
+                  onTag: token => {
+                    setQuery(token)
+                    setDayFilter('')
+                  },
+                }),
+              ),
 
               data.lastRun
                 ? h(
@@ -1558,6 +1582,31 @@ window.__ModuleLoader__.load({
                         },
                       },
                       '取消选择',
+                    ),
+                  )
+                : null,
+
+              dayFilter
+                ? h(
+                    'div',
+                    { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 } },
+                    h(Chip, { color: C.brand }, `日期 ${dayFilter}`),
+                    h(
+                      'button',
+                      {
+                        type: 'button',
+                        onClick: () => setDayFilter(''),
+                        style: {
+                          fontSize: 11,
+                          padding: '1px 8px',
+                          borderRadius: 999,
+                          border: `1px solid ${C.line}`,
+                          background: 'transparent',
+                          color: C.sub,
+                          cursor: 'pointer',
+                        },
+                      },
+                      '清除',
                     ),
                   )
                 : null,
