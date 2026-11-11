@@ -8,6 +8,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ---
 
+## [0.23.0] — 2026-11-11
+
+### 新增
+
+- **独立详情页**：记忆、日记、周报都能「打开独立页」——整页只显示这一条内容，左上角「← 返回」回到列表，不再挤在卡片里展开。
+- **记忆详情页**：完整正文、标签、范围、权重、创建/更新/最近使用时间，以及逐轮「来源对话」；页内可直接编辑、归档、删除。
+- **日记详情页**：日期、心情、人格、emoji、完整正文、人格留言、当天习惯与配图；页内可直接编辑正文。
+- **周报详情页**：标题、正文、心情、三条高光、人格短评与统计；往期周报列表点一下即可打开。
+
+### 版本
+
+- `0.22.0` → `0.23.0`。
+
+---
+
+## [0.23.0] — 2026-11-11
+
+### Added
+
+- **Dedicated detail pages**: memories, diary entries and weekly reports can all be opened on their own page — one item per screen, with "← 返回" back to the list instead of expanding inside a card.
+- **Memory page**: full text, tags, scope, weight, created/updated/last-used times, and the turn-by-turn source conversation; edit, archive and delete right there.
+- **Diary page**: date, mood, persona, emoji, full body, persona comment, that day's habits and the meme image; edit in place.
+- **Weekly page**: headline, body, mood, three highlights, persona comment and stats; clicking any past week in the list opens it.
+
+### Version
+
+- `0.22.0` → `0.23.0`.
+
+---
+
 ## [0.22.0] — 2026-11-11
 
 ### 新增

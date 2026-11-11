@@ -440,6 +440,299 @@ window.__ModuleLoader__.load({
       )
     }
 
+    /** A memory opened as its own page: full text, origins and actions. */
+    function MemoryDetail(props) {
+      const { entry, onBack, onChanged, onForget, onArchive } = props
+      const [editing, setEditing] = useState(false)
+      const [form, setForm] = useState({
+        text: entry.text,
+        tags: (entry.tags || []).join(', '),
+        scope: entry.scope,
+        workspace: entry.workspace || '',
+      })
+      const [busy, setBusy] = useState(false)
+
+      const save = useCallback(async () => {
+        setBusy(true)
+        try {
+          await fetch(API, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              action: 'update',
+              id: entry.id,
+              text: form.text,
+              tags: form.tags.split(',').map(tag => tag.trim()).filter(Boolean),
+              scope: form.scope,
+              workspace: form.workspace,
+            }),
+          })
+          setEditing(false)
+          await onChanged()
+        } finally {
+          setBusy(false)
+        }
+      }, [entry.id, form, onChanged])
+
+      const origins = Array.isArray(entry.origins) ? entry.origins : []
+
+      return h(
+        'div',
+        { className: 'lm-fade' },
+        h(
+          'div',
+          { style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 } },
+          h(
+            'button',
+            {
+              type: 'button',
+              onClick: onBack,
+              style: {
+                fontSize: 12,
+                padding: '3px 10px',
+                borderRadius: 999,
+                border: `1px solid ${C.line}`,
+                background: 'transparent',
+                color: C.sub,
+                cursor: 'pointer',
+              },
+            },
+            '← 返回记忆列表',
+          ),
+          h('div', { style: { fontSize: 14, fontWeight: 600, color: C.ink } }, '记忆详情'),
+          h(
+            'div',
+            { style: { marginLeft: 'auto', display: 'flex', gap: 8 } },
+            h(
+              'button',
+              {
+                type: 'button',
+                onClick: () => setEditing(previous => !previous),
+                style: {
+                  fontSize: 12,
+                  padding: '3px 12px',
+                  borderRadius: 999,
+                  border: `1px solid ${C.brand}`,
+                  background: 'transparent',
+                  color: C.brand,
+                  cursor: 'pointer',
+                },
+              },
+              editing ? '取消编辑' : '编辑',
+            ),
+            h(
+              'button',
+              {
+                type: 'button',
+                onClick: () => onArchive(entry, !entry.archived),
+                style: {
+                  fontSize: 12,
+                  padding: '3px 12px',
+                  borderRadius: 999,
+                  border: `1px solid ${C.line}`,
+                  background: 'transparent',
+                  color: C.sub,
+                  cursor: 'pointer',
+                },
+              },
+              entry.archived ? '恢复' : '归档',
+            ),
+            h(
+              'button',
+              {
+                type: 'button',
+                onClick: () => onForget(entry),
+                style: {
+                  fontSize: 12,
+                  padding: '3px 12px',
+                  borderRadius: 999,
+                  border: `1px solid ${C.err}`,
+                  background: 'transparent',
+                  color: C.err,
+                  cursor: 'pointer',
+                },
+              },
+              '删除',
+            ),
+          ),
+        ),
+
+        h(
+          'div',
+          {
+            className: 'lm-glass',
+            style: glass({ borderRadius: 14, padding: '16px 18px', marginBottom: 12 }),
+          },
+          h(
+            'div',
+            { style: { display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' } },
+            h(Chip, { color: entry.scope === 'global' ? C.brand : C.sub }, entry.scope === 'global' ? '全局' : '工作区'),
+            entry.archived ? h(Chip, { color: C.faint }, '已归档') : null,
+            entry.workspace ? h('span', { style: { fontSize: 11, color: C.faint } }, entry.workspace) : null,
+            h(
+              'span',
+              { style: { marginLeft: 'auto', fontSize: 11, color: C.faint } },
+              `来源 ${entry.source || 'auto'} · 命中 ${entry.hits || 0} · 权重 ${(entry.weight || 1).toFixed(1)}`,
+            ),
+          ),
+
+          editing
+            ? h(
+                'div',
+                null,
+                h('textarea', {
+                  value: form.text,
+                  rows: 4,
+                  onChange: event => setForm({ ...form, text: event.target.value }),
+                  style: {
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    fontSize: 14,
+                    lineHeight: '22px',
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    border: `1px solid ${C.line}`,
+                    background: 'transparent',
+                    color: C.ink,
+                    resize: 'vertical',
+                    outline: 'none',
+                  },
+                }),
+                h(
+                  'div',
+                  { style: { display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' } },
+                  h('input', {
+                    value: form.tags,
+                    onChange: event => setForm({ ...form, tags: event.target.value }),
+                    placeholder: '标签，逗号分隔',
+                    style: {
+                      flex: '1 1 160px',
+                      fontSize: 12,
+                      padding: '6px 9px',
+                      borderRadius: 8,
+                      border: `1px solid ${C.line}`,
+                      background: 'transparent',
+                      color: C.ink,
+                      outline: 'none',
+                    },
+                  }),
+                  h(
+                    'select',
+                    {
+                      value: form.scope,
+                      onChange: event => setForm({ ...form, scope: event.target.value }),
+                      style: {
+                        fontSize: 12,
+                        padding: '6px 9px',
+                        borderRadius: 8,
+                        border: `1px solid ${C.line}`,
+                        background: 'transparent',
+                        color: C.ink,
+                      },
+                    },
+                    h('option', { value: 'global' }, '全局'),
+                    h('option', { value: 'workspace' }, '工作区'),
+                  ),
+                  form.scope === 'workspace'
+                    ? h('input', {
+                        value: form.workspace,
+                        onChange: event => setForm({ ...form, workspace: event.target.value }),
+                        placeholder: '工作区目录',
+                        style: {
+                          flex: '1 1 220px',
+                          fontSize: 12,
+                          padding: '6px 9px',
+                          borderRadius: 8,
+                          border: `1px solid ${C.line}`,
+                          background: 'transparent',
+                          color: C.ink,
+                          outline: 'none',
+                        },
+                      })
+                    : null,
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      disabled: busy,
+                      onClick: save,
+                      style: {
+                        fontSize: 12,
+                        padding: '6px 14px',
+                        borderRadius: 999,
+                        border: 'none',
+                        background: C.brand,
+                        color: '#fff',
+                        cursor: busy ? 'default' : 'pointer',
+                        opacity: busy ? 0.6 : 1,
+                      },
+                    },
+                    '保存',
+                  ),
+                ),
+              )
+            : h('div', { style: { fontSize: 15, lineHeight: '26px', color: C.ink, wordBreak: 'break-word' } }, entry.text),
+
+          (entry.tags || []).length
+            ? h(
+                'div',
+                { style: { display: 'flex', gap: 5, marginTop: 10, flexWrap: 'wrap' } },
+                entry.tags.map(tag => h(Chip, { key: tag }, tag)),
+              )
+            : null,
+
+          h(
+            'div',
+            { style: { display: 'flex', gap: 14, marginTop: 12, fontSize: 11, color: C.faint, flexWrap: 'wrap' } },
+            h('span', null, `创建 ${relTime(entry.createdAt || 0)}`),
+            h('span', null, `更新 ${relTime(entry.updatedAt)}`),
+            h('span', null, `最近使用 ${relTime(entry.lastUsedAt || entry.updatedAt)}`),
+          ),
+        ),
+
+        h(
+          'div',
+          {
+            className: 'lm-glass',
+            style: glass({ borderRadius: 14, padding: '14px 18px' }),
+          },
+          h('div', { style: { fontSize: 12, color: C.sub, marginBottom: 8 } }, `来源对话（${origins.length}）`),
+          origins.length
+            ? origins
+                .slice()
+                .reverse()
+                .map((origin, index) =>
+                  h(
+                    'div',
+                    {
+                      key: `${origin.sessionId}-${origin.turn}-${index}`,
+                      style: {
+                        padding: '8px 0',
+                        borderTop: index === 0 ? 'none' : `1px dashed ${C.line}`,
+                      },
+                    },
+                    h(
+                      'div',
+                      { style: { fontSize: 10, color: C.faint, marginBottom: 4 } },
+                      `${origin.sessionId || '未知会话'} · 第 ${origin.turn || '?'} 轮 · ${relTime(origin.at || 0)}`,
+                    ),
+                    origin.user
+                      ? h('div', { style: { fontSize: 12, lineHeight: '19px', color: C.ink } }, `用户：${origin.user}`)
+                      : null,
+                    origin.assistant
+                      ? h(
+                          'div',
+                          { style: { fontSize: 12, lineHeight: '19px', color: C.sub, marginTop: 2 } },
+                          `助手：${origin.assistant}`,
+                        )
+                      : null,
+                  ),
+                )
+            : h('div', { style: { fontSize: 12, color: C.faint } }, '这条记忆还没有记录来源对话（可能是手动或导入的）。'),
+        ),
+      )
+    }
+
     /** Compact metric tile used by the dashboard rows. */
     function Tile(props) {
       return h(
@@ -1098,6 +1391,7 @@ window.__ModuleLoader__.load({
       const [workspaceFilter, setWorkspaceFilter] = useState('')
       const [everyTurnsDraft, setEveryTurnsDraft] = useState('')
       const [templateOpen, setTemplateOpen] = useState(false)
+      const [detailId, setDetailId] = useState('')
 
       useEffect(() => {
         load()
@@ -1335,6 +1629,27 @@ window.__ModuleLoader__.load({
         : C.line
 
       const busy = state.status === 'loading' || state.status === 'refreshing'
+
+      const detailEntry = entries.find(entry => entry.id === detailId)
+      if (detailEntry) {
+        return h(MemoryDetail, {
+          entry: detailEntry,
+          onBack: () => setDetailId(''),
+          onChanged: load,
+          onForget: async target => {
+            await forget(target.id)
+            setDetailId('')
+          },
+          onArchive: async (target, archived) => {
+            await fetch(API, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ action: 'archive-memories', ids: [target.id], archived }),
+            })
+            await load()
+          },
+        })
+      }
 
       return h(
         'div',
@@ -2372,6 +2687,24 @@ window.__ModuleLoader__.load({
                               },
                               '编辑',
                             ),
+                            h(
+                              'button',
+                              {
+                                type: 'button',
+                                onClick: () => setDetailId(entry.id),
+                                style: {
+                                  marginTop: 6,
+                                  marginLeft: 10,
+                                  padding: 0,
+                                  fontSize: 11,
+                                  color: C.brand,
+                                  background: 'transparent',
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                },
+                              },
+                              '打开独立页 ›',
+                            ),
                             open
                               ? h(
                                   'div',
@@ -2697,6 +3030,264 @@ window.__ModuleLoader__.load({
     }
 
 
+    /** A diary entry opened as its own page. */
+    function DiaryDetail(props) {
+      const { entry, onBack, onChanged } = props
+      const [editing, setEditing] = useState(false)
+      const [draft, setDraft] = useState(entry.diary || '')
+      const [busy, setBusy] = useState(false)
+
+      const save = useCallback(async () => {
+        setBusy(true)
+        try {
+          await fetch(API, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ action: 'diary-update', date: entry.date, diary: draft }),
+          })
+          setEditing(false)
+          await onChanged()
+        } finally {
+          setBusy(false)
+        }
+      }, [entry.date, draft, onChanged])
+
+      const dateText = entryDateText(entry.date, entry.updatedAt)
+      const accent = MOOD_COLORS[entry.mood] || MOOD_COLORS.daily
+
+      return h(
+        'div',
+        { className: 'lm-fade' },
+        h(
+          'div',
+          { style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 } },
+          h(
+            'button',
+            {
+              type: 'button',
+              onClick: onBack,
+              style: {
+                fontSize: 12,
+                padding: '3px 10px',
+                borderRadius: 999,
+                border: `1px solid ${C.line}`,
+                background: 'transparent',
+                color: C.sub,
+                cursor: 'pointer',
+              },
+            },
+            '← 返回日记列表',
+          ),
+          h('div', { style: { fontSize: 14, fontWeight: 600, color: C.ink } }, dateText.title),
+          h(
+            'button',
+            {
+              type: 'button',
+              onClick: () => setEditing(previous => !previous),
+              style: {
+                marginLeft: 'auto',
+                fontSize: 12,
+                padding: '3px 12px',
+                borderRadius: 999,
+                border: `1px solid ${C.brand}`,
+                background: 'transparent',
+                color: C.brand,
+                cursor: 'pointer',
+              },
+            },
+            editing ? '取消编辑' : '编辑',
+          ),
+        ),
+
+        h(
+          'div',
+          { className: 'lm-glass', style: glass({ borderRadius: 14, padding: '16px 18px', marginBottom: 12 }) },
+          h(
+            'div',
+            { style: { display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' } },
+            entry.mood
+              ? h(Chip, { color: accent }, `${MOOD_EMOJI[entry.mood] || ''} ${MOOD_LABEL[entry.mood] || entry.mood}`)
+              : null,
+            entry.personaName ? h(Chip, { color: C.sub }, `${entry.personaEmoji || '🐟'} ${entry.personaName}`) : null,
+            h('span', { style: { marginLeft: 'auto', fontSize: 11, color: C.faint } }, dateText.updated || relTime(entry.updatedAt)),
+            entry.emoji ? h('span', { style: { fontSize: 16, letterSpacing: 3 } }, entry.emoji) : null,
+          ),
+          editing
+            ? h(
+                'div',
+                null,
+                h('textarea', {
+                  value: draft,
+                  rows: 10,
+                  onChange: event => setDraft(event.target.value),
+                  style: {
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    fontSize: 14,
+                    lineHeight: '24px',
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    border: `1px solid ${C.line}`,
+                    background: 'transparent',
+                    color: C.ink,
+                    resize: 'vertical',
+                    outline: 'none',
+                  },
+                }),
+                h(
+                  'div',
+                  { style: { display: 'flex', justifyContent: 'flex-end', marginTop: 8 } },
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      disabled: busy,
+                      onClick: save,
+                      style: {
+                        fontSize: 12,
+                        padding: '5px 16px',
+                        borderRadius: 999,
+                        border: 'none',
+                        background: C.brand,
+                        color: '#fff',
+                        cursor: busy ? 'default' : 'pointer',
+                        opacity: busy ? 0.6 : 1,
+                      },
+                    },
+                    '保存',
+                  ),
+                ),
+              )
+            : h(
+                'div',
+                {
+                  style: {
+                    fontSize: 14,
+                    lineHeight: '26px',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    color: C.ink,
+                  },
+                },
+                entry.diary,
+              ),
+          entry.fish
+            ? h(
+                'div',
+                {
+                  style: {
+                    marginTop: 12,
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    background: `${C.brand}14`,
+                    fontSize: 12,
+                    color: C.ink,
+                    lineHeight: '19px',
+                  },
+                },
+                `${entry.personaEmoji || '🐟'} ${entry.fish}`,
+              )
+            : null,
+        ),
+
+        (entry.habits || []).length
+          ? h(
+              'div',
+              { className: 'lm-glass', style: glass({ borderRadius: 14, padding: '14px 18px', marginBottom: 12 }) },
+              h('div', { style: { fontSize: 12, color: C.sub, marginBottom: 6 } }, '当天习惯'),
+              entry.habits.map((habit, index) =>
+                h('div', { key: index, style: { fontSize: 12, color: C.ink, lineHeight: '20px' } }, `· ${habit.text || habit}`),
+              ),
+            )
+          : null,
+
+        entry.memePath
+          ? h('img', {
+              src: `${API}?meme=${encodeURIComponent(entry.date)}`,
+              alt: entry.memeCaption || '配图',
+              style: { display: 'block', maxWidth: '100%', maxHeight: 280, borderRadius: 12 },
+            })
+          : null,
+      )
+    }
+
+    /** One weekly report opened as its own page. */
+    function WeeklyDetail(props) {
+      const { item, onBack } = props
+      return h(
+        'div',
+        { className: 'lm-fade' },
+        h(
+          'div',
+          { style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 } },
+          h(
+            'button',
+            {
+              type: 'button',
+              onClick: onBack,
+              style: {
+                fontSize: 12,
+                padding: '3px 10px',
+                borderRadius: 999,
+                border: `1px solid ${C.line}`,
+                background: 'transparent',
+                color: C.sub,
+                cursor: 'pointer',
+              },
+            },
+            '← 返回日记列表',
+          ),
+          h('div', { style: { fontSize: 14, fontWeight: 600, color: C.ink } }, `周报 ${item.start} ~ ${item.end}`),
+          item.auto ? h(Chip, { color: C.faint }, '自动生成') : null,
+        ),
+        h(
+          'div',
+          { className: 'lm-glass', style: glass({ borderRadius: 14, padding: '16px 18px' }) },
+          item.headline
+            ? h('div', { style: { fontSize: 16, fontWeight: 600, color: C.ink, marginBottom: 8 } }, item.headline)
+            : null,
+          h(
+            'div',
+            { style: { fontSize: 14, lineHeight: '26px', color: C.ink, whiteSpace: 'pre-wrap', marginBottom: 10 } },
+            item.summary,
+          ),
+          item.moods
+            ? h('div', { style: { fontSize: 12, color: C.sub, marginBottom: 8 } }, `心情：${item.moods}`)
+            : null,
+          (item.highlights || []).length
+            ? h(
+                'div',
+                { style: { marginBottom: 10 } },
+                h('div', { style: { fontSize: 12, color: C.sub, marginBottom: 4 } }, '值得记住的事'),
+                item.highlights.map((text, index) =>
+                  h('div', { key: index, style: { fontSize: 12, lineHeight: '20px', color: C.ink } }, `· ${text}`),
+                ),
+              )
+            : null,
+          item.fish
+            ? h(
+                'div',
+                {
+                  style: {
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    background: `${C.brand}14`,
+                    fontSize: 12,
+                    color: C.ink,
+                  },
+                },
+                `${item.personaEmoji || '🐟'} ${item.fish}`,
+              )
+            : null,
+          h(
+            'div',
+            { style: { marginTop: 12, fontSize: 11, color: C.faint } },
+            `${item.diaryCount || 0} 篇日记 · ${item.memoryCount || 0} 条新记忆 · 生成于 ${relTime(item.createdAt || 0)}`,
+          ),
+        ),
+      )
+    }
+
     /** Diary: one quiet entry per day, with habits and the fish's comment. */
     function DiaryView() {
       const [state, setState] = useState({ status: 'loading', data: null, error: null })
@@ -2707,6 +3298,8 @@ window.__ModuleLoader__.load({
       const [moodFilter, setMoodFilter] = useState('')
       const [dayFilter, setDayFilter] = useState('')
       const [habitFilter, setHabitFilter] = useState('')
+      const [diaryDate, setDiaryDate] = useState('')
+      const [weeklyDetail, setWeeklyDetail] = useState(null)
 
       const generateWeekly = useCallback(async force => {
         setWeeklyBusy(true)
@@ -2769,6 +3362,21 @@ window.__ModuleLoader__.load({
       const currentWeekKey = (state.data && state.data.currentWeek) || ''
       const currentWeekly = weekly.find(item => item.week === currentWeekKey)
       const pastWeekly = weekly.filter(item => item.week !== currentWeekKey)
+
+      if (weeklyDetail) {
+        return h(WeeklyDetail, { item: weeklyDetail, onBack: () => setWeeklyDetail(null) })
+      }
+      const diaryDetail = entries.find(entry => entry.date === diaryDate)
+      if (diaryDetail) {
+        return h(DiaryDetail, {
+          entry: diaryDetail,
+          onBack: () => setDiaryDate(''),
+          onChanged: async () => {
+            const data = await fetchPanel()
+            setState({ status: 'ready', data, error: null })
+          },
+        })
+      }
 
       const personaFor = entry =>
         ((state.data && state.data.personas && state.data.personas.list) || []).find(item => item.id === entry.personaId) ||
@@ -2946,7 +3554,18 @@ window.__ModuleLoader__.load({
                         'div',
                         {
                           key: item.week,
-                          style: { fontSize: 11, color: C.sub, lineHeight: '18px', display: 'flex', gap: 6 },
+                          onClick: () => setWeeklyDetail(item),
+                          title: '打开这一期周报',
+                          style: {
+                            fontSize: 11,
+                            color: C.sub,
+                            lineHeight: '18px',
+                            display: 'flex',
+                            gap: 6,
+                            cursor: 'pointer',
+                            borderRadius: 6,
+                            padding: '0 4px',
+                          },
                         },
                         h('span', { style: { flex: 1, minWidth: 0 } }, `${item.start} ~ ${item.end}：${item.headline || item.summary.slice(0, 30)}`),
                         item.auto ? h(Chip, { color: C.faint }, '自动') : null,
@@ -3139,6 +3758,24 @@ window.__ModuleLoader__.load({
                       },
                     },
                     '编辑',
+                  ),
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'lm-btn',
+                      onClick: () => setDiaryDate(entry.date),
+                      style: {
+                        fontSize: 11,
+                        padding: '2px 9px',
+                        borderRadius: 999,
+                        border: `1px solid ${C.brand}`,
+                        background: 'transparent',
+                        color: C.brand,
+                        cursor: 'pointer',
+                      },
+                    },
+                    '打开独立页 ›',
                   ),
                   entry.emoji
                     ? h('div', { style: { fontSize: 16, letterSpacing: 4, marginLeft: 'auto' } }, entry.emoji)
