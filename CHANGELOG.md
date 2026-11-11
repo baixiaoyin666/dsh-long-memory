@@ -8,6 +8,34 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ---
 
+## [0.16.0] — 2026-11-11
+
+### 新增
+
+- **数据仪表盘**：记忆页顶部改成类似「上下文洞察」的仪表盘——5 个指标块（总数 / 全局 / 工作区 / 已归档 / 累计命中）、近 14 天新增柱状图、分布圆环（全局 / 工作区 / 已归档 + 来源明细）、标签 Top 横条、最近 5 周活跃度热力格、健康度环与工作区分布。
+- 全部图表用 SVG 与 CSS 绘制，不引入图表库，也不新增接口。
+
+### 变更
+
+- 原来的四个数字卡片与健康度卡片合并进仪表盘，信息密度更高。
+- 版本号 `0.15.0` → `0.16.0`。
+
+---
+
+## [0.16.0] — 2026-11-11
+
+### Added
+
+- **Data dashboard**: the top of the memory tab now reads like a stats panel — five metric tiles (total / global / workspace / archived / total hits), a 14-day creation bar chart, a distribution donut (global / workspace / archived plus a source breakdown), top tags as bars, a five-week activity heatmap, and the health ring with the workspace distribution.
+- Every chart is drawn with SVG and CSS: no chart library, no new API.
+
+### Changed
+
+- The old four number cards and the health card folded into the dashboard for a denser overview.
+- Version `0.15.0` → `0.16.0`.
+
+---
+
 ## [0.15.0] — 2026-11-11
 
 ### 新增

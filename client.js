@@ -319,6 +319,484 @@ window.__ModuleLoader__.load({
       )
     }
 
+    /** Swallow one failing panel section instead of taking the whole panel down. */
+    class Safe extends React.Component {
+      constructor(props) {
+        super(props)
+        this.state = { failed: false }
+      }
+
+      static getDerivedStateFromError() {
+        return { failed: true }
+      }
+
+      render() {
+        return this.state.failed ? null : this.props.children
+      }
+    }
+
+    /** Compact metric tile used by the dashboard rows. */
+    function Tile(props) {
+      return h(
+        'div',
+        {
+          className: 'lm-tilt lm-spot lm-glass lm-fade',
+          style: glass({ borderRadius: 14, padding: '12px 14px', minWidth: 0 }),
+          ...tiltProps(),
+        },
+        h('div', { style: { fontSize: 11, color: C.faint, marginBottom: 4 } }, props.label),
+        h(
+          'div',
+          { style: { fontSize: 22, fontWeight: 600, lineHeight: 1.15, color: props.color || C.ink } },
+          String(props.value),
+        ),
+        props.sub ? h('div', { style: { fontSize: 11, color: C.faint, marginTop: 4 } }, props.sub) : null,
+      )
+    }
+
+    /** Horizontal mini bars: label, bar, count. */
+    function BarList(props) {
+      const rows = props.rows || []
+      const max = rows.reduce((top, row) => Math.max(top, row[1]), 1)
+      return h(
+        'div',
+        null,
+        rows.map(([label, count], index) =>
+          h(
+            'div',
+            {
+              key: `${label}-${index}`,
+              style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 },
+            },
+            h(
+              'div',
+              {
+                title: label,
+                style: {
+                  width: 74,
+                  flex: 'none',
+                  fontSize: 11,
+                  color: C.sub,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                },
+              },
+              label,
+            ),
+            h(
+              'div',
+              {
+                style: {
+                  flex: 1,
+                  height: 6,
+                  borderRadius: 999,
+                  background: 'color-mix(in srgb, var(--dsw-alias-border-l1) 45%, transparent)',
+                  overflow: 'hidden',
+                },
+              },
+              h('div', {
+                style: {
+                  width: `${Math.max(4, Math.round((count / max) * 100))}%`,
+                  height: '100%',
+                  borderRadius: 999,
+                  background: props.color || C.brand,
+                },
+              }),
+            ),
+            h('div', { style: { width: 28, textAlign: 'right', fontSize: 11, color: C.faint } }, String(count)),
+          ),
+        ),
+      )
+    }
+
+    /** The statistics dashboard: tiles, 14-day chart, split donut, tags, heatmap. */
+    function Dashboard(props) {
+      const { analysis, entries } = props
+      const stats = useMemo(() => {
+        const dayKeyOf = ts => {
+          const date = new Date(ts)
+          return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+        }
+        const now = new Date()
+        const days = []
+        for (let offset = 13; offset >= 0; offset -= 1) {
+          const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - offset)
+          days.push({ key: dayKeyOf(date.getTime()), label: `${date.getMonth() + 1}/${date.getDate()}`, count: 0 })
+        }
+        const dayIndex = new Map(days.map(day => [day.key, day]))
+        const sources = new Map()
+        const tags = new Map()
+        const workspaces = new Map()
+        let hits = 0
+        let archived = 0
+        let globalCount = 0
+        let workspaceCount = 0
+        for (const entry of entries) {
+          if (entry.archived) archived += 1
+          if (entry.scope === 'global') globalCount += 1
+          else {
+            workspaceCount += 1
+            const key = entry.workspace || '（未记录）'
+            workspaces.set(key, (workspaces.get(key) || 0) + 1)
+          }
+          hits += entry.hits || 0
+          const source = entry.source || 'auto'
+          sources.set(source, (sources.get(source) || 0) + 1)
+          for (const tag of entry.tags || []) tags.set(tag, (tags.get(tag) || 0) + 1)
+          const slot = dayIndex.get(dayKeyOf(entry.createdAt || 0))
+          if (slot) slot.count += 1
+        }
+        const heat = []
+        for (let offset = 34; offset >= 0; offset -= 1) {
+          const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - offset)
+          heat.push({ key: dayKeyOf(date.getTime()), day: date.getDate(), count: 0 })
+        }
+        const heatIndex = new Map(heat.map(day => [day.key, day]))
+        for (const entry of entries) {
+          const cell = heatIndex.get(dayKeyOf(entry.createdAt || 0))
+          if (cell) cell.count += 1
+        }
+        return {
+          days,
+          heat,
+          hits,
+          archived,
+          globalCount,
+          workspaceCount,
+          sources: [...sources].sort((a, b) => b[1] - a[1]),
+          tags: [...tags].sort((a, b) => b[1] - a[1]).slice(0, 8),
+          workspaces: [...workspaces].sort((a, b) => b[1] - a[1]).slice(0, 5),
+        }
+      }, [entries])
+
+      const total = Math.max(1, entries.length)
+      const radius = 26
+      const circumference = 2 * Math.PI * radius
+      const segments = [
+        { label: '全局', value: stats.globalCount, color: C.brand },
+        { label: '工作区', value: stats.workspaceCount, color: '#b08cff' },
+        { label: '已归档', value: stats.archived, color: 'color-mix(in srgb, var(--dsw-alias-border-l1) 80%, transparent)' },
+      ].filter(segment => segment.value > 0)
+      let offset = 0
+      const arcs = segments.map(segment => {
+        const length = (segment.value / total) * circumference
+        const arc = { ...segment, length, offset }
+        offset += length
+        return arc
+      })
+
+      const maxBar = stats.days.reduce((top, day) => Math.max(top, day.count), 1)
+      const heatMax = stats.heat.reduce((top, day) => Math.max(top, day.count), 1)
+      const healthColor = analysis.health >= 80 ? C.ok : analysis.health >= 50 ? C.warn : C.err
+
+      return h(
+        React.Fragment,
+        null,
+        h(
+          'div',
+          {
+            style: {
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(112px, 1fr))',
+              gap: 10,
+              marginBottom: 12,
+            },
+          },
+          h(Tile, { label: '记忆总数', value: analysis.total }),
+          h(Tile, { label: '全局', value: analysis.global }),
+          h(Tile, { label: '工作区', value: analysis.workspace }),
+          h(Tile, { label: '已归档', value: stats.archived, color: C.faint }),
+          h(Tile, { label: '累计命中', value: stats.hits, color: C.brand }),
+        ),
+
+        h(
+          'div',
+          {
+            style: {
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+              gap: 10,
+              marginBottom: 12,
+            },
+          },
+          h(
+            'div',
+            {
+              className: 'lm-glass lm-fade',
+              style: glass({ borderRadius: 14, padding: '12px 14px' }),
+            },
+            h(
+              'div',
+              { style: { display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 } },
+              h('div', { style: { fontSize: 12, color: C.sub } }, '近 14 天新增'),
+              h('div', { style: { fontSize: 11, color: C.faint, marginLeft: 'auto' } }, `累计 ${entries.length} 条`),
+            ),
+            h(
+              'div',
+              { style: { display: 'flex', alignItems: 'flex-end', gap: 4, height: 72 } },
+              stats.days.map(day =>
+                h(
+                  'div',
+                  {
+                    key: day.key,
+                    title: `${day.label} · ${day.count} 条`,
+                    style: {
+                      flex: 1,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'flex-end',
+                      height: '100%',
+                    },
+                  },
+                  h('div', {
+                    style: {
+                      height: `${Math.max(2, Math.round((day.count / maxBar) * 100))}%`,
+                      borderRadius: 4,
+                      background: day.count ? C.brand : 'color-mix(in srgb, var(--dsw-alias-border-l1) 45%, transparent)',
+                      opacity: day.count ? 0.85 : 1,
+                    },
+                  }),
+                ),
+              ),
+            ),
+            h(
+              'div',
+              { style: { display: 'flex', gap: 4, marginTop: 6 } },
+              stats.days.map(day =>
+                h(
+                  'div',
+                  {
+                    key: `${day.key}-label`,
+                    style: { flex: 1, textAlign: 'center', fontSize: 9, color: C.faint },
+                  },
+                  day.label,
+                ),
+              ),
+            ),
+          ),
+
+          h(
+            'div',
+            {
+              className: 'lm-glass lm-fade',
+              style: glass({ borderRadius: 14, padding: '12px 14px' }),
+            },
+            h('div', { style: { fontSize: 12, color: C.sub, marginBottom: 8 } }, '分布'),
+            h(
+              'div',
+              { style: { display: 'flex', alignItems: 'center', gap: 14 } },
+              h(
+                'svg',
+                { width: 72, height: 72, viewBox: '0 0 64 64', style: { flex: 'none' } },
+                h('circle', {
+                  cx: 32,
+                  cy: 32,
+                  r: radius,
+                  fill: 'none',
+                  stroke: 'color-mix(in srgb, var(--dsw-alias-border-l1) 55%, transparent)',
+                  strokeWidth: 8,
+                }),
+                arcs.map(arc =>
+                  h('circle', {
+                    key: arc.label,
+                    cx: 32,
+                    cy: 32,
+                    r: radius,
+                    fill: 'none',
+                    stroke: arc.color,
+                    strokeWidth: 8,
+                    strokeDasharray: `${arc.length} ${circumference - arc.length}`,
+                    strokeDashoffset: -arc.offset,
+                    transform: 'rotate(-90 32 32)',
+                  }),
+                ),
+              ),
+              h(
+                'div',
+                { style: { flex: 1, minWidth: 0 } },
+                segments.map(segment =>
+                  h(
+                    'div',
+                    {
+                      key: segment.label,
+                      style: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: C.sub, lineHeight: '20px' },
+                    },
+                    h('span', {
+                      style: { width: 8, height: 8, borderRadius: 3, background: segment.color, flex: 'none' },
+                    }),
+                    h('span', null, segment.label),
+                    h('span', { style: { marginLeft: 'auto', color: C.faint } }, String(segment.value)),
+                  ),
+                ),
+                h(
+                  'div',
+                  { style: { fontSize: 11, color: C.faint, marginTop: 4 } },
+                  `来源：${stats.sources.map(([name, count]) => `${name} ${count}`).join(' · ') || '暂无'}`,
+                ),
+              ),
+            ),
+          ),
+        ),
+
+        h(
+          'div',
+          {
+            style: {
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+              gap: 10,
+              marginBottom: 12,
+            },
+          },
+          h(
+            'div',
+            {
+              className: 'lm-glass lm-fade',
+              style: glass({ borderRadius: 14, padding: '12px 14px' }),
+            },
+            h('div', { style: { fontSize: 12, color: C.sub, marginBottom: 8 } }, '标签 Top'),
+            stats.tags.length
+              ? h(BarList, { rows: stats.tags, color: C.brand })
+              : h('div', { style: { fontSize: 11, color: C.faint } }, '还没有标签'),
+          ),
+
+          h(
+            'div',
+            {
+              className: 'lm-glass lm-fade',
+              style: glass({ borderRadius: 14, padding: '12px 14px' }),
+            },
+            h(
+              'div',
+              { style: { display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 } },
+              h('div', { style: { fontSize: 12, color: C.sub } }, '活跃度'),
+              h('div', { style: { fontSize: 11, color: C.faint, marginLeft: 'auto' } }, '最近 5 周'),
+            ),
+            h(
+              'div',
+              {
+                style: {
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(7, 1fr)',
+                  gap: 3,
+                },
+              },
+              stats.heat.map(day =>
+                h('div', {
+                  key: day.key,
+                  title: `${day.key} · ${day.count} 条`,
+                  style: {
+                    aspectRatio: '1',
+                    borderRadius: 3,
+                    background: day.count
+                      ? `color-mix(in srgb, ${C.brand} ${Math.min(90, 18 + (day.count / heatMax) * 72)}%, transparent)`
+                      : 'color-mix(in srgb, var(--dsw-alias-border-l1) 35%, transparent)',
+                  },
+                }),
+              ),
+            ),
+          ),
+        ),
+
+        h(
+          'div',
+          {
+            style: {
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+              gap: 10,
+              marginBottom: 12,
+            },
+          },
+          h(
+            'div',
+            {
+              className: 'lm-tilt lm-spot lm-glass lm-fade',
+              style: glass({ borderRadius: 14, padding: '14px' }),
+              ...tiltProps(),
+            },
+            h(
+              'div',
+              { style: { display: 'flex', alignItems: 'center', gap: 14 } },
+              h(
+                'svg',
+                { width: 60, height: 60, viewBox: '0 0 64 64', className: 'lm-ring', style: { flex: 'none' } },
+                h('circle', {
+                  cx: 32,
+                  cy: 32,
+                  r: radius,
+                  fill: 'none',
+                  stroke: 'color-mix(in srgb, var(--dsw-alias-border-l1) 65%, transparent)',
+                  strokeWidth: 6,
+                }),
+                h('circle', {
+                  cx: 32,
+                  cy: 32,
+                  r: radius,
+                  fill: 'none',
+                  stroke: healthColor,
+                  strokeWidth: 6,
+                  strokeLinecap: 'round',
+                  strokeDasharray: `${circumference}`,
+                  strokeDashoffset: `${circumference * (1 - analysis.health / 100)}`,
+                  transform: 'rotate(-90 32 32)',
+                }),
+              ),
+              h(
+                'div',
+                { style: { flex: 1, minWidth: 0 } },
+                h(
+                  'div',
+                  { style: { display: 'flex', alignItems: 'baseline', gap: 8 } },
+                  h('div', { style: { fontSize: 13, fontWeight: 600 } }, '记忆健康度'),
+                  h('div', { style: { fontSize: 20, fontWeight: 700, color: healthColor } }, `${analysis.health}`),
+                  h('div', { style: { fontSize: 12, color: C.faint } }, '/ 100'),
+                ),
+                h(
+                  'div',
+                  { style: { fontSize: 12, color: C.faint, marginTop: 4 } },
+                  `平均 ${analysis.avgLength} 字 · ${analysis.stale30d} 条超过 30 天`,
+                ),
+              ),
+            ),
+            analysis.issues.slice(0, 3).map((issue, index) =>
+              h(
+                'div',
+                {
+                  key: `issue-${index}`,
+                  style: { display: 'flex', gap: 8, fontSize: 12, color: C.sub, lineHeight: '19px', marginTop: 6 },
+                },
+                h('span', {
+                  style: {
+                    width: 6,
+                    height: 6,
+                    borderRadius: 999,
+                    background: LEVEL_COLOR[issue.level] || C.sub,
+                    marginTop: 6,
+                    flex: 'none',
+                  },
+                }),
+                h('span', null, issue.text),
+              ),
+            ),
+          ),
+
+          h(
+            'div',
+            {
+              className: 'lm-glass lm-fade',
+              style: glass({ borderRadius: 14, padding: '12px 14px' }),
+            },
+            h('div', { style: { fontSize: 12, color: C.sub, marginBottom: 8 } }, '工作区分布'),
+            stats.workspaces.length
+              ? h(BarList, { rows: stats.workspaces, color: '#b08cff' })
+              : h('div', { style: { fontSize: 11, color: C.faint } }, '还没有工作区记忆'),
+          ),
+        ),
+      )
+    }
+
     function ErrorBox(props) {
       return h(
         'div',
@@ -672,105 +1150,7 @@ window.__ModuleLoader__.load({
 
               state.status === 'error' ? h(ErrorBox, { error: state.error, onRetry: load }) : null,
 
-              h(
-                'div',
-                {
-                  style: {
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
-                    gap: 10,
-                    marginBottom: 12,
-                  },
-                },
-                h(Card, { label: '总条数', value: analysis.total }),
-                h(Card, { label: '全局', value: analysis.global }),
-                h(Card, { label: '工作区', value: analysis.workspace }),
-                h(Card, { label: '近 7 天新增', value: analysis.recent7d }),
-              ),
-
-              h(
-                'div',
-                {
-                  className: 'lm-tilt lm-spot lm-glass lm-fade',
-                  style: glass({
-                    borderRadius: 14,
-                    padding: '14px',
-                    marginBottom: 12,
-                  }),
-                  ...tiltProps(),
-                },
-                h(
-                  'div',
-                  { style: { display: 'flex', alignItems: 'center', gap: 14, marginBottom: 10 } },
-                  h(
-                    'svg',
-                    { width: 66, height: 66, viewBox: '0 0 64 64', className: 'lm-ring', style: { flex: 'none' } },
-                    h('circle', {
-                      cx: 32,
-                      cy: 32,
-                      r: 26,
-                      fill: 'none',
-                      stroke: 'color-mix(in srgb, var(--dsw-alias-border-l1) 65%, transparent)',
-                      strokeWidth: 6,
-                    }),
-                    h('circle', {
-                      cx: 32,
-                      cy: 32,
-                      r: 26,
-                      fill: 'none',
-                      stroke: healthColor,
-                      strokeWidth: 6,
-                      strokeLinecap: 'round',
-                      strokeDasharray: `${2 * Math.PI * 26}`,
-                      strokeDashoffset: `${2 * Math.PI * 26 * (1 - analysis.health / 100)}`,
-                      transform: 'rotate(-90 32 32)',
-                    }),
-                  ),
-                  h(
-                    'div',
-                    { style: { flex: 1, minWidth: 0 } },
-                    h(
-                      'div',
-                      { style: { display: 'flex', alignItems: 'baseline', gap: 8 } },
-                      h('div', { style: { fontSize: 13, fontWeight: 600 } }, '记忆健康度'),
-                      h('div', { style: { fontSize: 20, fontWeight: 700, color: healthColor } }, `${analysis.health}`),
-                      h('div', { style: { fontSize: 12, color: C.faint } }, '/ 100'),
-                    ),
-                    h(
-                      'div',
-                      { style: { fontSize: 12, color: C.faint, marginTop: 4 } },
-                      `平均 ${analysis.avgLength} 字 · ${analysis.stale30d} 条超过 30 天`,
-                    ),
-                  ),
-                ),
-                ...analysis.issues.map((issue, index) =>
-                  h(
-                    'div',
-                    {
-                      key: `issue-${index}`,
-                      style: { display: 'flex', gap: 8, fontSize: 13, color: C.sub, lineHeight: '21px' },
-                    },
-                    h('span', {
-                      style: {
-                        width: 6,
-                        height: 6,
-                        borderRadius: 999,
-                        background: LEVEL_COLOR[issue.level] || C.sub,
-                        marginTop: 7,
-                        flex: 'none',
-                      },
-                    }),
-                    h('span', null, issue.text),
-                  ),
-                ),
-                analysis.topTags.length
-                  ? h(
-                      'div',
-                      { style: { display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 } },
-                      analysis.topTags.map(tag => h(Chip, { key: tag.tag }, `${tag.tag} · ${tag.count}`)),
-                    )
-                  : null,
-              ),
+              h(Safe, null, h(Dashboard, { analysis, entries })),
 
               data.lastRun
                 ? h(
