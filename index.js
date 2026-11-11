@@ -883,6 +883,8 @@ export function apply(ctx) {
       analysis: { ...analysis, health, issues },
       lastRun,
       diary: diary.entries.slice(0, 30),
+      weekly: reports.entries.slice(0, 6),
+      currentWeek: weekKey(),
       backfill: { ...backfill },
       settings: {
         disabledWorkspaces: settings.disabledWorkspaces,
@@ -951,6 +953,158 @@ export function apply(ctx) {
       })
       .catch(error => warn('[long-memory] failed to persist diary:', error))
     return writeChain
+  }
+
+  // ---- weekly report: the week distilled in the active persona's voice -----
+
+  const reportsFile = path.join(dataDir, 'reports.json')
+  const reports = { entries: [] }
+  let weeklyBusy = false
+
+  async function loadReports() {
+    try {
+      const parsed = JSON.parse(await readFile(reportsFile, 'utf8'))
+      if (parsed && Array.isArray(parsed.entries)) {
+        reports.entries = parsed.entries.filter(item => item && typeof item.week === 'string')
+      }
+    } catch (error) {
+      if (error?.code !== 'ENOENT') warn('[long-memory] failed to load reports:', error)
+    }
+  }
+
+  function persistReports() {
+    const snapshot = JSON.stringify({ entries: reports.entries })
+    writeChain = writeChain
+      .then(async () => {
+        await mkdir(dataDir, { recursive: true })
+        const tmp = `${reportsFile}.tmp`
+        await writeFile(tmp, snapshot, 'utf8')
+        await rename(tmp, reportsFile)
+      })
+      .catch(error => warn('[long-memory] failed to persist reports:', error))
+    return writeChain
+  }
+
+  function weekStart(ts = Date.now()) {
+    const date = new Date(ts)
+    const offset = (date.getDay() + 6) % 7
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate() - offset)
+  }
+
+  function weekKey(ts = Date.now()) {
+    return `week-${dayKey(weekStart(ts).getTime())}`
+  }
+
+  function buildWeeklyPrompt(entries, memories, persona, startLabel, endLabel) {
+    return [
+      `你在为「${persona.name}」写这一周（${startLabel} 至 ${endLabel}）的周报。`,
+      persona.prompt || '',
+      '',
+      '下面是这一周的日记与新增记忆，请归纳成简短周报，不要逐条复述。',
+      '',
+      '【日记】',
+      ...entries.map(
+        entry =>
+          `${entry.date}（${entry.mood || 'daily'}）：${clip(entry.diary, 300)}；习惯：${(entry.habits || [])
+            .map(habit => habit.text)
+            .join('、') || '无'}`,
+      ),
+      '',
+      '【本周新增记忆】',
+      ...(memories.length ? memories.map(entry => `- ${entry.text}`) : ['（无）']),
+      '',
+      '输出格式（每项一行，不要 JSON、不要解释）：',
+      'HEADLINE: 一句话概括这周',
+      'SUMMARY: 120–200 字的周记，第一人称，有画面感',
+      'MOODS: 一句话点评这周的心情走向',
+      'HIGHLIGHTS: 三条值得记住的事，用 ｜ 分隔',
+      'FISH: 一句人格口吻的短评，不超过 40 字',
+    ].join('\n')
+  }
+
+  function parseWeekly(raw) {
+    const result = { headline: '', summary: '', moods: '', highlights: [], fish: '' }
+    // Models sometimes answer on one line or wrap the labels in bold; split on
+    // the markers themselves so a single-line reply still parses.
+    const normalized = String(raw || '')
+      .replace(/\*\*/g, '')
+      .replace(/\s*(HEADLINE|SUMMARY|MOODS|HIGHLIGHTS|FISH)\s*[:：]/gi, (match, key) => `\n${key.toUpperCase()}: `)
+      .replace(/\n{2,}/g, '\n')
+      .trim()
+    for (const line of normalized.split('\n')) {
+      const trimmed = line.trim()
+      if (!trimmed) continue
+      if (/^HEADLINE\s*[:：]/i.test(trimmed)) result.headline = trimmed.replace(/^HEADLINE\s*[:：]\s*/i, '')
+      else if (/^SUMMARY\s*[:：]/i.test(trimmed)) result.summary = trimmed.replace(/^SUMMARY\s*[:：]\s*/i, '')
+      else if (/^MOODS\s*[:：]/i.test(trimmed)) result.moods = trimmed.replace(/^MOODS\s*[:：]\s*/i, '')
+      else if (/^HIGHLIGHTS\s*[:：]/i.test(trimmed)) {
+        result.highlights = trimmed
+          .replace(/^HIGHLIGHTS\s*[:：]\s*/i, '')
+          .split(/[｜|]/)
+          .map(item => item.trim())
+          .filter(Boolean)
+          .slice(0, 3)
+      } else if (/^FISH\s*[:：]/i.test(trimmed)) result.fish = trimmed.replace(/^FISH\s*[:：]\s*/i, '')
+    }
+    if (!result.summary) result.summary = normalized.slice(0, 400)
+    return result
+  }
+
+  async function ensureWeekly(force) {
+    if (weeklyBusy) return { ok: false, reason: '周报正在生成' }
+    const key = weekKey()
+    const existing = reports.entries.find(item => item.week === key)
+    if (existing && !force) return { ok: true, entry: existing }
+    const start = weekStart()
+    const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6)
+    const startLabel = dayKey(start.getTime())
+    const endLabel = dayKey(end.getTime())
+    const weekEntries = diary.entries.filter(
+      entry => entry.date >= startLabel && entry.date <= endLabel && entry.diary,
+    )
+    if (weekEntries.length < 2 && !force) return { ok: false, reason: '这周的日记还太少（至少 2 篇）' }
+    const memories = state.entries.filter(entry => (entry.createdAt || 0) >= start.getTime()).slice(0, 20)
+    const route = diaryRoute()
+    if (!route) return { ok: false, reason: '没有可用的模型路由' }
+    weeklyBusy = true
+    try {
+      const persona = activePersona()
+      const raw = await complete(
+        buildWeeklyPrompt(weekEntries, memories, persona, startLabel, endLabel),
+        route,
+        { maxTokens: 1400, temperature: 0.6 },
+      )
+      const parsed = parseWeekly(raw)
+      if (!parsed.summary) return { ok: false, reason: '模型没有返回内容' }
+      const entry = {
+        week: key,
+        start: startLabel,
+        end: endLabel,
+        headline: cleanText(parsed.headline, 80),
+        summary: cleanText(parsed.summary, 800),
+        moods: cleanText(parsed.moods, 120),
+        highlights: parsed.highlights.map(item => cleanText(item, 80)).filter(Boolean),
+        fish: cleanText(parsed.fish, 120),
+        personaId: persona.id,
+        personaName: persona.name,
+        personaEmoji: persona.emoji,
+        diaryCount: weekEntries.length,
+        memoryCount: memories.length,
+        createdAt: existing?.createdAt || Date.now(),
+        updatedAt: Date.now(),
+      }
+      const index = reports.entries.findIndex(item => item.week === key)
+      if (index >= 0) reports.entries[index] = entry
+      else reports.entries.unshift(entry)
+      reports.entries.sort((a, b) => (a.week < b.week ? 1 : -1))
+      if (reports.entries.length > 24) reports.entries.length = 24
+      await persistReports()
+      return { ok: true, entry }
+    } catch (error) {
+      return { ok: false, reason: String(error?.message || error) }
+    } finally {
+      weeklyBusy = false
+    }
   }
 
   // ---- personas: built-in popular archetypes plus user-defined ones -------
@@ -1682,6 +1836,7 @@ export function apply(ctx) {
 
   const apiHandler = async (req, res) => {
     let diaryResult
+    let weeklyResult
     let personaResult
     let settingsResult
     try {
@@ -1777,6 +1932,8 @@ export function apply(ctx) {
           }
         } else if (body?.action === 'diary') {
           diaryResult = await ensureDiary(Boolean(body.force))
+        } else if (body?.action === 'weekly') {
+          weeklyResult = await ensureWeekly(Boolean(body.force))
         } else if (body?.action === 'persona-save') {
           personaResult = savePersona(body.persona || body)
           if (personaResult.ok) await persistPersonas()
@@ -1946,6 +2103,7 @@ export function apply(ctx) {
       }
       const payloadObject = await panelPayload()
       if (diaryResult) payloadObject.diaryResult = diaryResult
+      if (weeklyResult) payloadObject.weeklyResult = weeklyResult
       if (personaResult) payloadObject.personaResult = personaResult
       if (settingsResult) payloadObject.settingsResult = settingsResult
       const payload = JSON.stringify(payloadObject)
@@ -2010,4 +2168,5 @@ export function apply(ctx) {
   loadPersonas().catch(error => warn('[long-memory] persona load crashed:', error))
   loadSettings().catch(error => warn('[long-memory] settings load crashed:', error))
   loadTrash().catch(error => warn('[long-memory] trash load crashed:', error))
+  loadReports().catch(error => warn('[long-memory] reports load crashed:', error))
 }

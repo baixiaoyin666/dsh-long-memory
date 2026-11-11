@@ -8,6 +8,34 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ---
 
+## [0.15.0] — 2026-11-11
+
+### 新增
+
+- **本周周报**：日记页顶部新增卡片，把这一周的日记与新增记忆归纳成一篇周记——标题、120–200 字正文、心情走向、三条值得记住的事，以及当前人格的一句短评；数据存 `reports.json`，保留最近 24 期。
+- 周报手动生成（至少 2 篇日记），可随时「重新生成」；卡片下方列出最近 4 期往期周报。
+
+### 变更
+
+- 周报解析兼容模型把 `HEADLINE/SUMMARY/...` 写成一行或加粗的情况。
+- 版本号 `0.14.0` → `0.15.0`。
+
+---
+
+## [0.15.0] — 2026-11-11
+
+### Added
+
+- **Weekly report**: a card at the top of the diary tab distils the week's diaries and new memories into one entry — headline, a 120–200 character body, the mood arc, three highlights and a one-line comment in the active persona's voice; stored in `reports.json`, keeping the last 24.
+- Generated on demand (needs at least two diaries), re-generatable, with the last four previous weeks listed underneath.
+
+### Changed
+
+- The parser tolerates replies that put `HEADLINE/SUMMARY/...` on one line or wrap the labels in bold.
+- Version `0.14.0` → `0.15.0`.
+
+---
+
 ## [0.14.0] — 2026-11-10
 
 ### 新增

@@ -1571,6 +1571,22 @@ window.__ModuleLoader__.load({
       const [busy, setBusy] = useState(false)
       const [editingDate, setEditingDate] = useState('')
       const [draft, setDraft] = useState('')
+      const [weeklyBusy, setWeeklyBusy] = useState(false)
+
+      const generateWeekly = useCallback(async force => {
+        setWeeklyBusy(true)
+        try {
+          await fetch(API, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ action: 'weekly', force: Boolean(force) }),
+          })
+          const data = await fetchPanel()
+          setState({ status: 'ready', data, error: null })
+        } finally {
+          setWeeklyBusy(false)
+        }
+      }, [])
 
       const saveDiary = useCallback(async date => {
         await fetch(API, {
@@ -1605,6 +1621,10 @@ window.__ModuleLoader__.load({
       }, [load])
 
       const entries = (state.data && state.data.diary) || []
+      const weekly = (state.data && state.data.weekly) || []
+      const currentWeekKey = (state.data && state.data.currentWeek) || ''
+      const currentWeekly = weekly.find(item => item.week === currentWeekKey)
+      const pastWeekly = weekly.filter(item => item.week !== currentWeekKey)
 
       const personaFor = entry =>
         ((state.data && state.data.personas && state.data.personas.list) || []).find(item => item.id === entry.personaId) ||
@@ -1664,6 +1684,128 @@ window.__ModuleLoader__.load({
               'div',
               { style: { fontSize: 12, color: C.sub, marginBottom: 10 } },
               `这次没有生成新日记：${state.data.diaryResult.reason || '未知原因'}`,
+            )
+          : null,
+
+        state.data
+          ? h(
+              'div',
+              {
+                className: 'lm-glass lm-fade',
+                style: glass({ borderRadius: 14, padding: '12px 14px', marginBottom: 12 }),
+              },
+              h(
+                'div',
+                { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 } },
+                h('div', { style: { fontSize: 12, color: C.sub } }, '本周周报'),
+                currentWeekly
+                  ? h(
+                      'div',
+                      { style: { fontSize: 11, color: C.faint } },
+                      `${currentWeekly.start} ~ ${currentWeekly.end} · ${currentWeekly.diaryCount || 0} 篇日记`,
+                    )
+                  : null,
+                h(
+                  'button',
+                  {
+                    type: 'button',
+                    className: 'lm-btn',
+                    ...magnetProps(),
+                    disabled: weeklyBusy,
+                    onClick: () => generateWeekly(Boolean(currentWeekly)),
+                    style: {
+                      marginLeft: 'auto',
+                      fontSize: 11,
+                      color: C.sub,
+                      background: 'transparent',
+                      border: `1px solid ${C.line}`,
+                      borderRadius: 8,
+                      padding: '3px 10px',
+                      cursor: weeklyBusy ? 'default' : 'pointer',
+                      opacity: weeklyBusy ? 0.6 : 1,
+                    },
+                  },
+                  weeklyBusy ? '写着…' : currentWeekly ? '重新生成' : '生成本周周报',
+                ),
+              ),
+              currentWeekly
+                ? h(
+                    'div',
+                    null,
+                    currentWeekly.headline
+                      ? h(
+                          'div',
+                          { style: { fontSize: 15, fontWeight: 600, color: C.ink, marginBottom: 6 } },
+                          currentWeekly.headline,
+                        )
+                      : null,
+                    h(
+                      'div',
+                      {
+                        style: {
+                          fontSize: 13,
+                          lineHeight: '22px',
+                          color: C.ink,
+                          whiteSpace: 'pre-wrap',
+                          marginBottom: 8,
+                        },
+                      },
+                      currentWeekly.summary,
+                    ),
+                    currentWeekly.moods
+                      ? h('div', { style: { fontSize: 12, color: C.sub, marginBottom: 6 } }, `心情：${currentWeekly.moods}`)
+                      : null,
+                    (currentWeekly.highlights || []).length
+                      ? h(
+                          'div',
+                          { style: { marginBottom: 8 } },
+                          currentWeekly.highlights.map((item, index) =>
+                            h(
+                              'div',
+                              {
+                                key: index,
+                                style: { fontSize: 12, color: C.sub, lineHeight: '20px' },
+                              },
+                              `· ${item}`,
+                            ),
+                          ),
+                        )
+                      : null,
+                    currentWeekly.fish
+                      ? h(
+                          'div',
+                          {
+                            style: {
+                              fontSize: 12,
+                              color: C.ink,
+                              padding: '8px 10px',
+                              borderRadius: 10,
+                              background: `${C.brand}14`,
+                            },
+                          },
+                          `${currentWeekly.personaEmoji || '🐟'} ${currentWeekly.fish}`,
+                        )
+                      : null,
+                  )
+                : h(
+                    'div',
+                    { style: { fontSize: 12, color: C.faint, lineHeight: '18px' } },
+                    '这周还没生成周报。攒够 2 篇日记后点上面的按钮，会把日记与本周新增记忆归纳成一篇周记。',
+                  ),
+              pastWeekly.length
+                ? h(
+                    'div',
+                    { style: { marginTop: 10, paddingTop: 8, borderTop: `1px dashed ${C.line}` } },
+                    h('div', { style: { fontSize: 11, color: C.faint, marginBottom: 4 } }, '往期周报'),
+                    pastWeekly.slice(0, 4).map(item =>
+                      h(
+                        'div',
+                        { key: item.week, style: { fontSize: 11, color: C.sub, lineHeight: '18px' } },
+                        `${item.start} ~ ${item.end}：${item.headline || item.summary.slice(0, 30)}`,
+                      ),
+                    ),
+                  )
+                : null,
             )
           : null,
 
