@@ -509,6 +509,7 @@ window.__ModuleLoader__.load({
         return {
           days,
           heat,
+          heatOffset: heat.length ? new Date(`${heat[0].key}T00:00:00`).getDay() : 0,
           hits,
           archived,
           globalCount,
@@ -517,6 +518,7 @@ window.__ModuleLoader__.load({
           sources: [...sources].sort((a, b) => b[1] - a[1]),
           tags: [...tags].sort((a, b) => b[1] - a[1]).slice(0, 7),
           workspaces: [...workspaces].sort((a, b) => b[1] - a[1]).slice(0, 5),
+          recent: [...entries].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 5),
         }
       }, [entries, daysSpan])
 
@@ -717,7 +719,11 @@ window.__ModuleLoader__.load({
                     style: { width: 8, height: 8, borderRadius: 3, background: segment.color, flex: 'none' },
                   }),
                   h('span', null, segment.label),
-                  h('span', { style: { marginLeft: 'auto', color: C.faint } }, String(segment.value)),
+                  h(
+                    'span',
+                    { style: { marginLeft: 'auto', color: C.faint } },
+                    `${segment.value} · ${Math.round((segment.value / total) * 100)}%`,
+                  ),
                 ),
               ),
             ),
@@ -727,6 +733,54 @@ window.__ModuleLoader__.load({
             { style: { fontSize: 10, color: C.faint, marginTop: 6, lineHeight: '15px' } },
             `来源：${stats.sources.map(([name, count]) => `${name} ${count}`).join(' · ') || '暂无'}`,
           ),
+        ),
+
+        panel(
+          'lm-span-6',
+          [headText('来源明细'), headMeta('按写入方式')],
+          stats.sources.length
+            ? h(BarList, {
+                rows: stats.sources.map(([name, count]) => [name, count]),
+                color: '#49e0d0',
+              })
+            : h('div', { style: { fontSize: 11, color: C.faint } }, '还没有数据'),
+        ),
+
+        panel(
+          'lm-span-6',
+          [headText('最近新增'), headMeta('最新 5 条')],
+          stats.recent.length
+            ? stats.recent.map(entry =>
+                h(
+                  'div',
+                  {
+                    key: entry.id,
+                    style: { display: 'flex', alignItems: 'flex-start', gap: 6, padding: '2px 0', lineHeight: '17px' },
+                  },
+                  h(Chip, { color: entry.scope === 'global' ? C.brand : C.sub }, entry.scope === 'global' ? '全局' : '工作区'),
+                  h(
+                    'div',
+                    {
+                      style: {
+                        flex: 1,
+                        minWidth: 0,
+                        fontSize: 11,
+                        color: C.sub,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      },
+                    },
+                    entry.text,
+                  ),
+                  h(
+                    'div',
+                    { style: { flex: 'none', fontSize: 10, color: C.faint } },
+                    relTime(entry.createdAt || 0),
+                  ),
+                ),
+              )
+            : h('div', { style: { fontSize: 11, color: C.faint } }, '还没有记忆'),
         ),
 
         panel(
@@ -747,6 +801,7 @@ window.__ModuleLoader__.load({
           h(
             'div',
             { style: { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3, marginTop: 4 } },
+            Array.from({ length: stats.heatOffset }, (_, index) => h('div', { key: `blank-${index}` })),
             stats.heat.map(day =>
               h('div', {
                 key: day.key,
@@ -764,6 +819,30 @@ window.__ModuleLoader__.load({
                 },
               }),
             ),
+          ),
+          h(
+            'div',
+            { style: { display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3, marginTop: 4 } },
+            ['日', '一', '二', '三', '四', '五', '六'].map(label =>
+              h('div', { key: label, style: { textAlign: 'center', fontSize: 9, color: C.faint } }, label),
+            ),
+          ),
+          h(
+            'div',
+            { style: { display: 'flex', alignItems: 'center', gap: 4, marginTop: 6, fontSize: 9, color: C.faint } },
+            h('span', null, '少'),
+            [0.15, 0.35, 0.6, 0.85].map(opacity =>
+              h('span', {
+                key: opacity,
+                style: {
+                  width: 10,
+                  height: 10,
+                  borderRadius: 2,
+                  background: `color-mix(in srgb, ${C.brand} ${opacity * 100}%, transparent)`,
+                },
+              }),
+            ),
+            h('span', null, '多'),
           ),
         ),
 
@@ -1769,8 +1848,11 @@ window.__ModuleLoader__.load({
                                 : null,
                               h(
                                 'span',
-                                { style: { fontSize: 11, color: C.faint, marginLeft: 'auto' } },
-                                `${relTime(entry.updatedAt)}${entry.hits ? ` · 命中 ${entry.hits}` : ''}`,
+                                {
+                                  title: `创建 ${relTime(entry.createdAt || 0)} · 更新 ${relTime(entry.updatedAt)} · 权重 ${(entry.weight || 1).toFixed(1)}`,
+                                  style: { fontSize: 11, color: C.faint, marginLeft: 'auto', whiteSpace: 'nowrap' },
+                                },
+                                `命中 ${entry.hits || 0} · 权重 ${(entry.weight || 1).toFixed(1)} · ${relTime(entry.updatedAt)}`,
                               ),
                             ),
                             editId === entry.id && editForm
@@ -1910,6 +1992,39 @@ window.__ModuleLoader__.load({
                                   ),
                                 )
                               : null,
+                            h(
+                              'div',
+                              {
+                                style: { display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 },
+                                title: `权重 ${(entry.weight || 1).toFixed(1)} / 5（每次合并 +0.3）`,
+                              },
+                              h('span', { style: { fontSize: 10, color: C.faint } }, '权重'),
+                              h(
+                                'div',
+                                {
+                                  style: {
+                                    width: 72,
+                                    height: 4,
+                                    borderRadius: 999,
+                                    background: 'color-mix(in srgb, var(--dsw-alias-border-l1) 45%, transparent)',
+                                    overflow: 'hidden',
+                                  },
+                                },
+                                h('div', {
+                                  style: {
+                                    width: `${Math.min(100, Math.round(((entry.weight || 1) / 5) * 100))}%`,
+                                    height: '100%',
+                                    borderRadius: 999,
+                                    background: C.brand,
+                                  },
+                                }),
+                              ),
+                              h(
+                                'span',
+                                { style: { fontSize: 10, color: C.faint } },
+                                `${(entry.weight || 1).toFixed(1)} / 5`,
+                              ),
+                            ),
                             h(
                               'button',
                               {

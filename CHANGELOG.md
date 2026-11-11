@@ -8,6 +8,40 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ---
 
+## [0.20.0] — 2026-11-11
+
+### 新增
+
+- **分布图例带占比**：全局 / 工作区 / 已归档 显示「数量 · 百分比」。
+- **来源明细面板**：按写入方式（auto / tool / panel / backfill / import）横向条形统计。
+- **最近新增面板**：最新 5 条记忆，带范围标签与相对时间，一眼看到刚记了什么。
+- **活跃度热力升级**：按星期对齐（日一二三四五六），补上「少 → 多」色阶图例。
+- **记忆条目常驻元信息**：每行直接显示「命中 N · 权重 W · 更新时间」，并加一条权重进度条（权重上限 5）。
+- 悬停在提醒上方可看到创建/更新/权重的完整时间线。
+
+### 版本
+
+- `0.19.0` → `0.20.0`。
+
+---
+
+## [0.20.0] — 2026-11-11
+
+### Added
+
+- **Percentages in the distribution legend**: global / workspace / archived now show "count · percent".
+- **Source breakdown panel**: horizontal bars by write path (auto / tool / panel / backfill / import).
+- **Recent additions panel**: the five newest memories with scope chips and relative time.
+- **Activity heatmap upgrade**: aligned to weekdays (Sun–Sat) with a "less → more" legend.
+- **Persistent row metadata**: every memory row shows "hits · weight · updated" plus a weight bar (weight caps at 5).
+- Hovering the metadata reveals the full created / updated / weight tooltip.
+
+### Version
+
+- `0.19.0` → `0.20.0`.
+
+---
+
 ## [0.19.0] — 2026-11-11
 
 ### 变更
