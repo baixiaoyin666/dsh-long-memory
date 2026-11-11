@@ -114,6 +114,69 @@ export function apply(ctx) {
   const backupsDir = path.join(dataDir, 'backups')
   const trashFile = path.join(dataDir, 'trash.json')
   const trash = []
+  const usageFile = path.join(dataDir, 'usage.json')
+  const usage = { days: {} }
+
+  async function loadUsage() {
+    try {
+      const parsed = JSON.parse(await readFile(usageFile, 'utf8'))
+      if (parsed && parsed.days && typeof parsed.days === 'object') usage.days = parsed.days
+    } catch (error) {
+      if (error?.code !== 'ENOENT') warn('[long-memory] failed to load usage:', error)
+    }
+  }
+
+  function recordUsage(inputTokens, outputTokens) {
+    const input = Number(inputTokens) || 0
+    const output = Number(outputTokens) || 0
+    if (!input && !output) return
+    const key = dayKey(Date.now())
+    const slot = usage.days[key] || { input: 0, output: 0, calls: 0 }
+    slot.input += input
+    slot.output += output
+    slot.calls += 1
+    usage.days[key] = slot
+    const keys = Object.keys(usage.days).sort()
+    for (const old of keys.slice(0, Math.max(0, keys.length - 120))) delete usage.days[old]
+    const snapshot = JSON.stringify(usage)
+    writeChain = writeChain
+      .then(async () => {
+        await mkdir(dataDir, { recursive: true })
+        const tmp = `${usageFile}.tmp`
+        await writeFile(tmp, snapshot, 'utf8')
+        await rename(tmp, usageFile)
+      })
+      .catch(error => warn('[long-memory] failed to persist usage:', error))
+  }
+
+  function usageSummary() {
+    const days = []
+    const now = new Date()
+    for (let offset = 13; offset >= 0; offset -= 1) {
+      const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - offset)
+      const key = dayKey(date.getTime())
+      const slot = usage.days[key] || { input: 0, output: 0, calls: 0 }
+      const cost = (slot.input / 1e6) * settings.priceInput + (slot.output / 1e6) * settings.priceOutput
+      days.push({
+        date: key,
+        label: `${date.getMonth() + 1}/${date.getDate()}`,
+        input: slot.input,
+        output: slot.output,
+        calls: slot.calls,
+        cost,
+      })
+    }
+    const total = days.reduce(
+      (sum, day) => ({
+        input: sum.input + day.input,
+        output: sum.output + day.output,
+        cost: sum.cost + day.cost,
+        calls: sum.calls + day.calls,
+      }),
+      { input: 0, output: 0, cost: 0, calls: 0 },
+    )
+    return { days, total }
+  }
   let lastBackupDay = ''
 
   async function maybeDailyBackup(snapshot) {
@@ -234,6 +297,12 @@ export function apply(ctx) {
       for await (const chunk of stream) {
         if (chunk?.type === 'text-delta' && typeof chunk.text === 'string') {
           out += chunk.text
+        } else if (chunk?.type === 'usage' && chunk.usage && typeof options.onUsage === 'function') {
+          try {
+            options.onUsage(chunk.usage)
+          } catch {
+            /* usage accounting must never break a model call */
+          }
         } else if (chunk?.type === 'finish') {
           const kind = chunk.reason?.kind
           if (kind === 'error' || kind === 'aborted') {
@@ -284,7 +353,9 @@ export function apply(ctx) {
     }
     const assistantForModel = settings.onlyUser ? '' : assistantText
     try {
-      const raw = await complete(buildExtractPrompt(userText, assistantForModel), route)
+      const raw = await complete(buildExtractPrompt(userText, assistantForModel), route, {
+        onUsage: usage => recordUsage(usage.inputTokens, usage.outputTokens),
+      })
       const candidates = parseCandidates(raw, MAX_CANDIDATES)
       let added = 0
       let merged = 0
@@ -891,7 +962,10 @@ export function apply(ctx) {
         auto: settings.auto,
         everyTurns: settings.everyTurns,
         onlyUser: settings.onlyUser,
+        priceInput: settings.priceInput,
+        priceOutput: settings.priceOutput,
       },
+      usage: usageSummary(),
       trash: {
         count: trash.length,
         items: trash.slice(0, 20).map(item => ({
@@ -1069,11 +1143,7 @@ export function apply(ctx) {
     weeklyBusy = true
     try {
       const persona = activePersona()
-      const raw = await complete(
-        buildWeeklyPrompt(weekEntries, memories, persona, startLabel, endLabel),
-        route,
-        { maxTokens: 1400, temperature: 0.6 },
-      )
+      const raw = await complete(buildWeeklyPrompt(weekEntries, memories, persona, startLabel, endLabel), route, { maxTokens: 1400, temperature: 0.6, onUsage: usage => recordUsage(usage.inputTokens, usage.outputTokens) })
       const parsed = parseWeekly(raw)
       if (!parsed.summary) return { ok: false, reason: '模型没有返回内容' }
       const entry = {
@@ -1274,7 +1344,14 @@ export function apply(ctx) {
   // ---- settings: per-workspace recording switch --------------------------
 
   const settingsFile = path.join(dataDir, 'settings.json')
-  const settings = { disabledWorkspaces: [], auto: true, everyTurns: 1, onlyUser: false }
+  const settings = {
+    disabledWorkspaces: [],
+    auto: true,
+    everyTurns: 1,
+    onlyUser: false,
+    priceInput: 2,
+    priceOutput: 8,
+  }
   const turnCounters = new Map()
 
   function clampEveryTurns(value) {
@@ -1294,6 +1371,8 @@ export function apply(ctx) {
       if (parsed && typeof parsed.auto === 'boolean') settings.auto = parsed.auto
       if (parsed && parsed.everyTurns !== undefined) settings.everyTurns = clampEveryTurns(parsed.everyTurns)
       if (parsed && typeof parsed.onlyUser === 'boolean') settings.onlyUser = parsed.onlyUser
+      if (parsed && parsed.priceInput !== undefined) settings.priceInput = Math.max(0, Number(parsed.priceInput) || 0)
+      if (parsed && parsed.priceOutput !== undefined) settings.priceOutput = Math.max(0, Number(parsed.priceOutput) || 0)
     } catch (error) {
       if (error?.code !== 'ENOENT') warn('[long-memory] failed to load settings:', error)
     }
@@ -1305,6 +1384,8 @@ export function apply(ctx) {
       auto: settings.auto,
       everyTurns: settings.everyTurns,
       onlyUser: settings.onlyUser,
+      priceInput: settings.priceInput,
+      priceOutput: settings.priceOutput,
     })
     writeChain = writeChain
       .then(async () => {
@@ -1468,7 +1549,7 @@ export function apply(ctx) {
     diaryBusy = true
     lastDiaryAttempt = now
     try {
-      const raw = await complete(buildDiaryPrompt(today.slice(-20), persona), route, { maxTokens: 2600, temperature: 0.75 })
+      const raw = await complete(buildDiaryPrompt(today.slice(-20), persona), route, { maxTokens: 2600, temperature: 0.75, onUsage: usage => recordUsage(usage.inputTokens, usage.outputTokens) })
       const parsed = parseDiary(raw)
       let picked
       try {
@@ -1790,7 +1871,7 @@ export function apply(ctx) {
             backfill.skipped += 1
             continue
           }
-          const raw = await complete(backfillPrompt(transcript), route, { maxTokens: 2400, temperature: 0.2 })
+          const raw = await complete(backfillPrompt(transcript), route, { maxTokens: 2400, temperature: 0.2, onUsage: usage => recordUsage(usage.inputTokens, usage.outputTokens) })
           if (!raw.trim()) throw new Error('模型没有返回文本（token 预算可能被推理占满）')
           const candidates = parseCandidates(raw, 6)
           backfill.debug = `turns=${turns.length} transcript=${transcript.length} raw=${JSON.stringify(String(raw).slice(0, 100))}`
@@ -1914,6 +1995,8 @@ export function apply(ctx) {
           if (typeof input.auto === 'boolean') settings.auto = input.auto
           if (input.everyTurns !== undefined) settings.everyTurns = clampEveryTurns(input.everyTurns)
           if (typeof input.onlyUser === 'boolean') settings.onlyUser = input.onlyUser
+          if (input.priceInput !== undefined) settings.priceInput = Math.max(0, Number(input.priceInput) || 0)
+          if (input.priceOutput !== undefined) settings.priceOutput = Math.max(0, Number(input.priceOutput) || 0)
           await persistSettings()
           settingsResult = { ok: true }
         } else if (body?.action === 'save') {
@@ -2169,4 +2252,5 @@ export function apply(ctx) {
   loadSettings().catch(error => warn('[long-memory] settings load crashed:', error))
   loadTrash().catch(error => warn('[long-memory] trash load crashed:', error))
   loadReports().catch(error => warn('[long-memory] reports load crashed:', error))
+  loadUsage().catch(error => warn('[long-memory] usage load crashed:', error))
 }

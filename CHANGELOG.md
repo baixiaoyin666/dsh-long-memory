@@ -8,6 +8,42 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ---
 
+## [0.21.0] — 2026-11-11
+
+### 新增
+
+- **Token / 费用趋势面板**：记录每次模型调用真实的 `usage`（输入 / 输出 token），按天汇总成 14 天折线图——蓝线输入、紫线输出、粉色虚线费用，旁边显示调用次数与合计。
+- **单价可配**：「提炼设置」新增输入 / 输出单价（元 / 百万 token，默认 2 / 8），费用按单价实时估算，悬停有说明。
+- 用量数据存 `usage.json`（保留 120 天），自动提炼、日记、周报、回填的调用都会计入。
+
+### 变更
+
+- **记忆列表改为卡片网格**：自适应 `minmax(260px, 1fr)` 多列排布，每张卡片仍保留复选框、标签、权重条、编辑 / 查看对话 / 删除。
+
+### 版本
+
+- `0.20.0` → `0.21.0`。
+
+---
+
+## [0.21.0] — 2026-11-11
+
+### Added
+
+- **Token / cost trend panel**: logs the real `usage` of every model call (input / output tokens) and charts the last 14 days — blue input, purple output, dashed pink cost — with call count and totals alongside.
+- **Configurable prices**: extraction settings gained input / output prices (CNY per million tokens, defaults 2 / 8); the cost estimate follows them live.
+- Usage lives in `usage.json` (120 days) and covers extraction, diary, weekly report and backfill calls.
+
+### Changed
+
+- **Memory list is now a card grid**: responsive `minmax(260px, 1fr)` columns; each card keeps its checkbox, tags, weight bar and edit / conversation / delete actions.
+
+### Version
+
+- `0.20.0` → `0.21.0`.
+
+---
+
 ## [0.20.0] — 2026-11-11
 
 ### 新增

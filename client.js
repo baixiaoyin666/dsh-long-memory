@@ -552,6 +552,19 @@ window.__ModuleLoader__.load({
       const healthColor = analysis.health >= 80 ? C.ok : analysis.health >= 50 ? C.warn : C.err
       const rangeLabel = range === 0 ? '全部' : `${range} 天`
 
+      const usage = props.usage || { days: [], total: { input: 0, output: 0, cost: 0, calls: 0 } }
+      const uDays = Array.isArray(usage.days) ? usage.days : []
+      const maxTok = uDays.reduce((top, day) => Math.max(top, day.input, day.output), 1)
+      const maxCost = uDays.reduce((top, day) => Math.max(top, day.cost), 0.0001)
+      const chartWidth = 300
+      const chartHeight = 88
+      const px = index => (uDays.length <= 1 ? chartWidth / 2 : (index / (uDays.length - 1)) * chartWidth)
+      const pyTok = value => chartHeight - (value / maxTok) * (chartHeight - 6)
+      const pyCost = value => chartHeight - (value / maxCost) * (chartHeight - 6)
+      const line = fn => uDays.map((day, index) => `${px(index).toFixed(1)},${fn(day).toFixed(1)}`).join(' ')
+      const fmtTok = value =>
+        value >= 1e6 ? `${(value / 1e6).toFixed(2)}M` : value >= 1e3 ? `${(value / 1e3).toFixed(1)}k` : String(value)
+
       const panel = (span, headParts, body) =>
         h(
           'div',
@@ -781,6 +794,76 @@ window.__ModuleLoader__.load({
                 ),
               )
             : h('div', { style: { fontSize: 11, color: C.faint } }, '还没有记忆'),
+        ),
+
+        panel(
+          'lm-span-12',
+          [
+            headText('Token / 费用趋势'),
+            headMeta(
+              `近 14 天 · 调用 ${usage.total.calls} 次 · 输入 ${fmtTok(usage.total.input)} · 输出 ${fmtTok(
+                usage.total.output,
+              )} · 估算 ¥${usage.total.cost.toFixed(3)}`,
+            ),
+          ],
+          h(
+            'div',
+            { style: { display: 'flex', alignItems: 'center', gap: 14, marginTop: 4 } },
+            h(
+              'div',
+              { style: { flex: 1, minWidth: 0 } },
+              h(
+                'svg',
+                {
+                  viewBox: '0 0 300 92',
+                  preserveAspectRatio: 'none',
+                  style: { width: '100%', height: 92, display: 'block' },
+                },
+                h('line', {
+                  x1: 0,
+                  y1: 88,
+                  x2: 300,
+                  y2: 88,
+                  stroke: 'color-mix(in srgb, var(--dsw-alias-border-l1) 60%, transparent)',
+                  strokeWidth: 1,
+                }),
+                h('polyline', {
+                  points: line(day => pyTok(day.input)),
+                  fill: 'none',
+                  stroke: C.brand,
+                  strokeWidth: 2,
+                  strokeLinejoin: 'round',
+                }),
+                h('polyline', {
+                  points: line(day => pyTok(day.output)),
+                  fill: 'none',
+                  stroke: '#b08cff',
+                  strokeWidth: 2,
+                  strokeLinejoin: 'round',
+                }),
+                h('polyline', {
+                  points: line(day => pyCost(day.cost)),
+                  fill: 'none',
+                  stroke: '#ff8ac2',
+                  strokeWidth: 1.5,
+                  strokeDasharray: '3 3',
+                }),
+              ),
+              h(
+                'div',
+                { style: { display: 'flex', justifyContent: 'space-between', fontSize: 9, color: C.faint } },
+                uDays.map(day => h('span', { key: day.date }, day.label)),
+              ),
+            ),
+            h(
+              'div',
+              { style: { flex: 'none', fontSize: 11, color: C.sub, lineHeight: '18px', minWidth: 96 } },
+              h('div', null, h('span', { style: { color: C.brand } }, '●'), ` 输入 ${fmtTok(usage.total.input)}`),
+              h('div', null, h('span', { style: { color: '#b08cff' } }, '●'), ` 输出 ${fmtTok(usage.total.output)}`),
+              h('div', null, h('span', { style: { color: '#ff8ac2' } }, '—'), ` 费用 ¥${usage.total.cost.toFixed(3)}`),
+              h('div', { style: { color: C.faint, marginTop: 2 } }, '单价可在「提炼设置」里改'),
+            ),
+          ),
         ),
 
         panel(
@@ -1260,6 +1343,7 @@ window.__ModuleLoader__.load({
                   analysis,
                   entries,
                   range,
+                  usage: data.usage,
                   dayFilter,
                   onRange: value => setRange(value),
                   onDay: key => setDayFilter(previous => (previous === key ? '' : key)),
@@ -1434,6 +1518,60 @@ window.__ModuleLoader__.load({
                       onChange: event => saveSettings({ onlyUser: event.target.checked }),
                     }),
                     '只发送用户消息',
+                  ),
+                  h(
+                    'label',
+                    {
+                      style: { display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, color: C.ink },
+                      title: '用于估算费用：输入 token 单价（元 / 百万 token）',
+                    },
+                    '输入 ¥/M',
+                    h('input', {
+                      type: 'number',
+                      min: 0,
+                      step: 0.1,
+                      defaultValue: settings.priceInput ?? 2,
+                      onBlur: event => {
+                        const next = Math.max(0, Number(event.target.value) || 0)
+                        if (next !== Number(settings.priceInput)) void saveSettings({ priceInput: next })
+                      },
+                      style: {
+                        width: 64,
+                        fontSize: 12,
+                        padding: '3px 6px',
+                        borderRadius: 6,
+                        border: `1px solid ${C.line}`,
+                        background: 'transparent',
+                        color: C.ink,
+                      },
+                    }),
+                  ),
+                  h(
+                    'label',
+                    {
+                      style: { display: 'flex', gap: 6, alignItems: 'center', fontSize: 12, color: C.ink },
+                      title: '用于估算费用：输出 token 单价（元 / 百万 token）',
+                    },
+                    '输出 ¥/M',
+                    h('input', {
+                      type: 'number',
+                      min: 0,
+                      step: 0.1,
+                      defaultValue: settings.priceOutput ?? 8,
+                      onBlur: event => {
+                        const next = Math.max(0, Number(event.target.value) || 0)
+                        if (next !== Number(settings.priceOutput)) void saveSettings({ priceOutput: next })
+                      },
+                      style: {
+                        width: 64,
+                        fontSize: 12,
+                        padding: '3px 6px',
+                        borderRadius: 6,
+                        border: `1px solid ${C.line}`,
+                        background: 'transparent',
+                        color: C.ink,
+                      },
+                    }),
                   ),
                 ),
               ),
@@ -1789,8 +1927,13 @@ window.__ModuleLoader__.load({
               h(
                 'div',
                 {
-                  className: 'lm-glass lm-fade',
-                  style: glass({ borderRadius: 14, overflow: 'hidden' }),
+                  className: 'lm-fade',
+                  style: {
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+                    gap: 10,
+                    marginBottom: 12,
+                  },
                 },
                 filtered.length === 0
                   ? h(
@@ -1805,12 +1948,14 @@ window.__ModuleLoader__.load({
                         'div',
                         {
                           key: entry.id,
-                          className: 'lm-row lm-fade',
-                          style: {
+                          className: 'lm-row lm-glass lm-fade',
+                          style: glass({
                             padding: '10px 12px',
+                            borderRadius: 12,
                             animationDelay: `${Math.min(index, 10) * 22}ms`,
-                            borderTop: index === 0 ? 'none' : `1px solid ${C.line}`,
-                          },
+                            display: 'flex',
+                            flexDirection: 'column',
+                          }),
                         },
                         h(
                           'div',
