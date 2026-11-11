@@ -361,6 +361,85 @@ window.__ModuleLoader__.load({
       }
     }
 
+    const MEMORY_TEMPLATES = [
+      '技术栈：前端 __、后端 __、数据库 __',
+      '常用命令：pnpm dev / pnpm build / pnpm test',
+      '代码约定：__',
+      '禁忌：不要 __',
+      '项目结构：__',
+    ]
+
+    /** What the plugin picked up in the last day, grouped by session. */
+    function RecentLearn(props) {
+      const { entries, onPick } = props
+      const rows = useMemo(() => {
+        const cutoff = Date.now() - 24 * 3600 * 1000
+        const items = []
+        for (const entry of entries) {
+          for (const origin of entry.origins || []) {
+            if ((origin.at || 0) >= cutoff) items.push({ entry, origin })
+          }
+        }
+        items.sort((a, b) => (b.origin.at || 0) - (a.origin.at || 0))
+        return items.slice(0, 8)
+      }, [entries])
+      if (rows.length === 0) return null
+      const sessions = new Set(rows.map(row => row.origin.sessionId || '')).size
+      return h(
+        'div',
+        {
+          className: 'lm-glass lm-fade',
+          style: glass({ borderRadius: 14, padding: '10px 14px', marginBottom: 12 }),
+        },
+        h(
+          'div',
+          { style: { display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 4 } },
+          h('div', { style: { fontSize: 12, color: C.sub } }, '最近 24 小时学到'),
+          h('div', { style: { fontSize: 11, color: C.faint } }, `${rows.length} 条 · ${sessions} 个会话`),
+          h('div', { style: { fontSize: 11, color: C.faint, marginLeft: 'auto' } }, '点一条可筛出来'),
+        ),
+        rows.map((row, index) =>
+          h(
+            'div',
+            {
+              key: `${row.entry.id}-${index}`,
+              onClick: () => onPick(row.entry.text),
+              title: '点击在列表里筛出这条',
+              style: {
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '3px 0',
+                cursor: 'pointer',
+                lineHeight: '17px',
+              },
+            },
+            h(
+              Chip,
+              { color: row.entry.scope === 'global' ? C.brand : C.sub },
+              row.entry.scope === 'global' ? '全局' : '工作区',
+            ),
+            h(
+              'div',
+              {
+                style: {
+                  flex: 1,
+                  minWidth: 0,
+                  fontSize: 11,
+                  color: C.sub,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                },
+              },
+              row.entry.text,
+            ),
+            h('div', { style: { flex: 'none', fontSize: 10, color: C.faint } }, relTime(row.origin.at || 0)),
+          ),
+        ),
+      )
+    }
+
     /** Compact metric tile used by the dashboard rows. */
     function Tile(props) {
       return h(
@@ -1018,6 +1097,7 @@ window.__ModuleLoader__.load({
       const [dayFilter, setDayFilter] = useState('')
       const [workspaceFilter, setWorkspaceFilter] = useState('')
       const [everyTurnsDraft, setEveryTurnsDraft] = useState('')
+      const [templateOpen, setTemplateOpen] = useState(false)
 
       useEffect(() => {
         load()
@@ -1178,6 +1258,22 @@ window.__ModuleLoader__.load({
         }
         await load()
       }, [load])
+
+      const applyTemplate = useCallback(
+        async text => {
+          setTemplateOpen(false)
+          const response = await fetch(API, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ action: 'save', text, scope: 'workspace' }),
+          })
+          const data = await readJson(response)
+          await load()
+          const created = ((data && data.entries) || []).find(entry => entry.text === text)
+          if (created) startEdit(created)
+        },
+        [load, startEdit],
+      )
 
       const data = state.data
       const analysis = data && data.analysis
@@ -1355,6 +1451,19 @@ window.__ModuleLoader__.load({
                   onWorkspace: value => {
                     setWorkspaceFilter(previous => (previous === value ? '' : value))
                     setDayFilter('')
+                  },
+                }),
+              ),
+
+              h(
+                Safe,
+                null,
+                h(RecentLearn, {
+                  entries,
+                  onPick: text => {
+                    setQuery(text)
+                    setDayFilter('')
+                    setWorkspaceFilter('')
                   },
                 }),
               ),
@@ -1918,11 +2027,69 @@ window.__ModuleLoader__.load({
                   '全选',
                 ),
                 h(
+                  'button',
+                  {
+                    type: 'button',
+                    onClick: () => setTemplateOpen(previous => !previous),
+                    title: '用模板快速添加一条结构化记忆',
+                    style: {
+                      fontSize: 12,
+                      padding: '7px 12px',
+                      borderRadius: 8,
+                      border: `1px solid ${templateOpen ? C.brand : C.line}`,
+                      background: 'transparent',
+                      color: templateOpen ? C.brand : C.sub,
+                      cursor: 'pointer',
+                    },
+                  },
+                  '模板',
+                ),
+                h(
                   'span',
                   { style: { fontSize: 11, color: C.faint, alignSelf: 'center' } },
                   `${filtered.length} 条`,
                 ),
               ),
+
+              templateOpen
+                ? h(
+                    'div',
+                    {
+                      className: 'lm-glass lm-fade',
+                      style: glass({
+                        borderRadius: 12,
+                        padding: '8px 12px',
+                        marginBottom: 8,
+                        display: 'flex',
+                        gap: 8,
+                        flexWrap: 'wrap',
+                        alignItems: 'center',
+                      }),
+                    },
+                    h('span', { style: { fontSize: 11, color: C.faint } }, '插入模板：'),
+                    MEMORY_TEMPLATES.map(text =>
+                      h(
+                        'button',
+                        {
+                          key: text,
+                          type: 'button',
+                          title: text,
+                          onClick: () => applyTemplate(text),
+                          style: {
+                            fontSize: 11,
+                            padding: '3px 10px',
+                            borderRadius: 999,
+                            border: `1px solid ${C.line}`,
+                            background: 'transparent',
+                            color: C.sub,
+                            cursor: 'pointer',
+                          },
+                        },
+                        text.split('：')[0] || text,
+                      ),
+                    ),
+                  )
+                : null,
 
               h(
                 'div',
@@ -2777,8 +2944,12 @@ window.__ModuleLoader__.load({
                     pastWeekly.slice(0, 4).map(item =>
                       h(
                         'div',
-                        { key: item.week, style: { fontSize: 11, color: C.sub, lineHeight: '18px' } },
-                        `${item.start} ~ ${item.end}：${item.headline || item.summary.slice(0, 30)}`,
+                        {
+                          key: item.week,
+                          style: { fontSize: 11, color: C.sub, lineHeight: '18px', display: 'flex', gap: 6 },
+                        },
+                        h('span', { style: { flex: 1, minWidth: 0 } }, `${item.start} ~ ${item.end}：${item.headline || item.summary.slice(0, 30)}`),
+                        item.auto ? h(Chip, { color: C.faint }, '自动') : null,
                       ),
                     ),
                   )

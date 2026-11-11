@@ -8,6 +8,34 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ---
 
+## [0.22.0] — 2026-11-11
+
+### 新增
+
+- **「最近 24 小时学到」面板**：把最近一天由哪些会话带进来的记忆列出来（带范围标签与相对时间），点一条直接在列表里筛出它——自动记忆不再是黑盒。
+- **记忆模板**：工具栏「模板」可一键插入「技术栈 / 常用命令 / 代码约定 / 禁忌 / 项目结构」五种结构化记忆，插入后自动进入编辑态补全。
+- **周报自动生成**：日记生成后若发现上周还没有周报且日记 ≥2 篇，会自动补一期，往期列表里标「自动」。
+
+### 版本
+
+- `0.21.0` → `0.22.0`。
+
+---
+
+## [0.22.0] — 2026-11-11
+
+### Added
+
+- **"Learned in the last 24h" panel**: lists which sessions contributed memories in the past day (scope chip + relative time); clicking a row filters the list to it, so automatic capture is no longer a black box.
+- **Memory templates**: a "模板" toolbar button inserts one of five structured memories (stack / commands / conventions / taboos / structure) and opens it for editing.
+- **Automatic weekly report**: after a diary is written, a missing report for the previous week is filled in automatically when that week had at least two diaries, marked "自动" in the history list.
+
+### Version
+
+- `0.21.0` → `0.22.0`.
+
+---
+
 ## [0.21.0] — 2026-11-11
 
 ### 新增

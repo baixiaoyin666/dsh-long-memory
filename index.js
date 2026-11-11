@@ -1124,12 +1124,12 @@ export function apply(ctx) {
     return result
   }
 
-  async function ensureWeekly(force) {
+  async function ensureWeekly(force, anchor = Date.now(), auto = false) {
     if (weeklyBusy) return { ok: false, reason: '周报正在生成' }
-    const key = weekKey()
+    const key = weekKey(anchor)
     const existing = reports.entries.find(item => item.week === key)
     if (existing && !force) return { ok: true, entry: existing }
-    const start = weekStart()
+    const start = weekStart(anchor)
     const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6)
     const startLabel = dayKey(start.getTime())
     const endLabel = dayKey(end.getTime())
@@ -1160,6 +1160,7 @@ export function apply(ctx) {
         personaEmoji: persona.emoji,
         diaryCount: weekEntries.length,
         memoryCount: memories.length,
+        auto: Boolean(auto),
         createdAt: existing?.createdAt || Date.now(),
         updatedAt: Date.now(),
       }
@@ -1177,8 +1178,24 @@ export function apply(ctx) {
     }
   }
 
-  // ---- personas: built-in popular archetypes plus user-defined ones -------
+  /** Once a week, quietly write the previous week's report when it is missing. */
+  async function maybeAutoWeekly() {
+    const anchor = Date.now() - 7 * 86400000
+    const key = weekKey(anchor)
+    if (reports.entries.some(item => item.week === key)) return
+    if (weeklyBusy) return
+    const start = weekStart(anchor)
+    const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6)
+    const startLabel = dayKey(start.getTime())
+    const endLabel = dayKey(end.getTime())
+    const count = diary.entries.filter(
+      entry => entry.date >= startLabel && entry.date <= endLabel && entry.diary,
+    ).length
+    if (count < 2) return
+    await ensureWeekly(false, anchor, true)
+  }
 
+  // ---- personas: built-in popular archetypes plus user-defined ones -------
   const personaFile = path.join(dataDir, 'personas.json')
   const BUILTIN_PERSONAS = [
     {
@@ -1599,6 +1616,7 @@ export function apply(ctx) {
       prune(state.entries, MAX_ENTRIES)
       await persist()
       await persistDiary()
+      void maybeAutoWeekly().catch(error => warn('[long-memory] auto weekly failed:', error))
       return { ok: true, entry }
     } catch (error) {
       warn('[long-memory] diary generation failed:', error)
