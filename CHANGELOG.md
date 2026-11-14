@@ -8,6 +8,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ---
 
+## [0.25.0] — 2026-11-14
+
+### 新增
+
+- **相关记忆**：记忆详情页底部列出最多 5 条相关记忆（共享词 + 共享标签打分），点一下直接跳到那条。
+- **语义排序检索**：搜索不再只看「子串包含」，改成 IDF 加权的词/双字匹配——越少见的词命中权重越高，`memory_search`、`memory_recall` 与面板搜索共用同一套算法。实测搜「包管理 pnpm」时，pnpm 依赖那条以 8.38 分排在无关条目（3.99）前面。
+- **最近 30 分钟角标**：面板标题旁显示「最近 30 分钟 +N」，一眼看到刚才会话新记了多少条。
+
+### 变更
+
+- 面板搜索有结果时按相关度排序，不再按更新时间。
+- 版本号 `0.24.0` → `0.25.0`。
+
+---
+
+## [0.25.0] — 2026-11-14
+
+### Added
+
+- **Related memories**: a memory detail page lists up to five related rows (shared tokens plus shared tags) and clicking one jumps straight to it.
+- **Semantic ranking**: search no longer relies on substring matching alone — IDF-weighted word/bigram matching, shared by `memory_search`, `memory_recall` and the panel search. Searching "包管理 pnpm" ranks the pnpm dependency row at 8.38 ahead of an unrelated row at 3.99.
+- **Last-30-minutes badge**: the panel title shows "最近 30 分钟 +N" so you can see how many memories the recent session added.
+
+### Changed
+
+- Panel search results order by relevance instead of update time when a query is present.
+- Version `0.24.0` → `0.25.0`.
+
+---
+
 ## [0.24.0] — 2026-11-11
 
 ### 新增

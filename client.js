@@ -204,6 +204,9 @@ window.__ModuleLoader__.load({
       [/^(\d+) 条超过 30 天$/, '$1 older than 30 days'],
       [/^来源 (.+)$/, 'source $1'],
       [/^共 (\d+) 条日记$/, '$1 diary entries'],
+      [/^最近 30 分钟 \+(\d+)$/, '+$1 in 30 min'],
+      [/^相关记忆（(\d+)）$/, 'Related memories ($1)'],
+      [/^来源对话（(\d+)）$/, 'Source conversation ($1)'],
     ]
 
     function tr(text) {
@@ -242,6 +245,70 @@ window.__ModuleLoader__.load({
         return child
       })
       return React.createElement(type, translateProps(props), ...nextChildren)
+    }
+
+    const CJK_CHAR = /[\u3400-\u4dbf\u4e00-\u9fff]/
+
+    /** Latin words plus CJK bigrams, lowercased. */
+    function tokenize(text) {
+      const out = new Set()
+      const source = String(text || '').toLowerCase()
+      for (const word of source.split(/[^a-z0-9\u3400-\u4dbf\u4e00-\u9fff]+/)) {
+        if (!word) continue
+        if (CJK_CHAR.test(word)) {
+          if (word.length === 1) out.add(word)
+          for (let index = 0; index < word.length - 1; index += 1) out.add(word.slice(index, index + 2))
+        } else if (word.length >= 2) {
+          out.add(word)
+        }
+      }
+      return out
+    }
+
+    function entryTokens(entry) {
+      return tokenize(`${entry.text} ${(entry.tags || []).join(' ')} ${entry.workspace || ''}`)
+    }
+
+    /** IDF-weighted relevance ranking over a candidate pool. */
+    function rankEntries(pool, query) {
+      const wanted = tokenize(query)
+      if (wanted.size === 0) return pool
+      const sets = pool.map(entryTokens)
+      const df = new Map()
+      for (const set of sets) for (const token of set) df.set(token, (df.get(token) || 0) + 1)
+      const total = Math.max(1, pool.length)
+      const needle = query.trim().toLowerCase()
+      const scored = []
+      pool.forEach((entry, index) => {
+        let score = 0
+        for (const token of wanted) {
+          if (sets[index].has(token)) score += Math.log(1 + total / (1 + (df.get(token) || 0)))
+        }
+        if (String(entry.text).toLowerCase().includes(needle)) score += 2
+        if (score > 0) scored.push({ entry, score })
+      })
+      scored.sort((a, b) => b.score - a.score || (b.entry.updatedAt || 0) - (a.entry.updatedAt || 0))
+      return scored.map(item => item.entry)
+    }
+
+    /** Other memories close to this one: shared tokens plus shared tags. */
+    function relatedTo(entry, pool, limit = 5) {
+      const base = entryTokens(entry)
+      if (base.size === 0) return []
+      const baseTags = new Set(entry.tags || [])
+      return pool
+        .filter(item => item.id !== entry.id && !item.archived)
+        .map(item => {
+          const set = entryTokens(item)
+          let shared = 0
+          for (const token of base) if (set.has(token)) shared += 1
+          const overlap = shared / Math.max(1, Math.min(base.size, set.size))
+          const tagBonus = (item.tags || []).some(tag => baseTags.has(tag)) ? 0.15 : 0
+          return { entry: item, score: overlap + tagBonus }
+        })
+        .filter(item => item.score >= 0.3)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, limit)
     }
 
     /** Collapse whitespace, strip list markers, cap length. */
@@ -681,7 +748,7 @@ window.__ModuleLoader__.load({
 
     /** A memory opened as its own page: full text, origins and actions. */
     function MemoryDetail(props) {
-      const { entry, onBack, onChanged, onForget, onArchive } = props
+      const { entry, onBack, onChanged, onForget, onArchive, related, onOpen } = props
       const [editing, setEditing] = useState(false)
       const [form, setForm] = useState({
         text: entry.text,
@@ -969,6 +1036,57 @@ window.__ModuleLoader__.load({
                 )
             : h('div', { style: { fontSize: 12, color: C.faint } }, '这条记忆还没有记录来源对话（可能是手动或导入的）。'),
         ),
+
+        related && related.length
+          ? h(
+              'div',
+              {
+                className: 'lm-glass',
+                style: glass({ borderRadius: 14, padding: '14px 18px', marginTop: 12 }),
+              },
+              h(
+                'div',
+                { style: { fontSize: 12, color: C.sub, marginBottom: 6 } },
+                `相关记忆（${related.length}）`,
+              ),
+              related.map(item =>
+                h(
+                  'div',
+                  {
+                    key: item.entry.id,
+                    onClick: () => onOpen(item.entry.id),
+                    title: '打开这条相关记忆',
+                    className: 'lm-row',
+                    style: {
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '4px 4px',
+                      borderRadius: 6,
+                      cursor: 'pointer',
+                    },
+                  },
+                  h(Chip, { color: item.entry.scope === 'global' ? C.brand : C.sub }, item.entry.scope === 'global' ? '全局' : '工作区'),
+                  h(
+                    'div',
+                    {
+                      style: {
+                        flex: 1,
+                        minWidth: 0,
+                        fontSize: 12,
+                        color: C.ink,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      },
+                    },
+                    item.entry.text,
+                  ),
+                  h('div', { style: { flex: 'none', fontSize: 10, color: C.faint } }, item.score.toFixed(2)),
+                ),
+              ),
+            )
+          : null,
       )
     }
 
@@ -1845,7 +1963,7 @@ window.__ModuleLoader__.load({
           return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
         }
         const needle = words.join(' ').toLowerCase()
-        return entries.filter(entry => {
+        const matched = entries.filter(entry => {
           if (workspaceFilter && (entry.workspace || '') !== workspaceFilter) return false
           if (dayFilter && dayKeyOf(entry.createdAt || 0) !== dayFilter) return false
           if (!spec.archived && entry.archived) return false
@@ -1853,10 +1971,10 @@ window.__ModuleLoader__.load({
           if (spec.scope && entry.scope !== spec.scope) return false
           if (spec.tag && !(entry.tags || []).some(tag => String(tag).toLowerCase().includes(spec.tag))) return false
           if (spec.before && (entry.createdAt || 0) >= spec.before) return false
-          if (!needle) return true
-          const haystack = `${entry.text} ${(entry.tags || []).join(' ')} ${entry.workspace || ''}`.toLowerCase()
-          return haystack.includes(needle)
+          return true
         })
+        if (!needle) return matched
+        return rankEntries(matched, needle)
       }, [entries, query, scope, dayFilter, workspaceFilter])
 
       const healthColor = analysis
@@ -1868,6 +1986,11 @@ window.__ModuleLoader__.load({
         : C.line
 
       const busy = state.status === 'loading' || state.status === 'refreshing'
+
+      const recentCutoff = Date.now() - 30 * 60 * 1000
+      const recentCount = entries.filter(entry =>
+        (entry.origins || []).some(origin => (origin.at || 0) >= recentCutoff),
+      ).length
 
       const detailEntry = entries.find(entry => entry.id === detailId)
       if (detailEntry) {
@@ -1887,6 +2010,8 @@ window.__ModuleLoader__.load({
             })
             await load()
           },
+          related: relatedTo(detailEntry, entries),
+          onOpen: id => setDetailId(id),
         })
       }
 
@@ -1903,6 +2028,22 @@ window.__ModuleLoader__.load({
             { style: { fontSize: 12, color: C.faint } },
             data ? `${analysis.total} 条 · 健康度 ${analysis.health}` : 'Long-term memory',
           ),
+          data && recentCount > 0
+            ? h(
+                'span',
+                {
+                  title: '最近 30 分钟由会话记录的记忆',
+                  style: {
+                    fontSize: 11,
+                    color: C.brand,
+                    padding: '1px 8px',
+                    borderRadius: 999,
+                    border: `1px solid ${C.brand}`,
+                  },
+                },
+                `最近 30 分钟 +${recentCount}`,
+              )
+            : null,
           data
             ? h(
                 'a',

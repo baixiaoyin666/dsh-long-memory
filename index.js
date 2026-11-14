@@ -571,6 +571,46 @@ export function apply(ctx) {
     return direct + similarity(haystack, query)
   }
 
+  const CJK_TEXT = /[\u3400-\u4dbf\u4e00-\u9fff]/
+
+  /** Latin words plus CJK bigrams, lowercased. */
+  function tokenizeText(text) {
+    const out = new Set()
+    const source = String(text || '').toLowerCase()
+    for (const word of source.split(/[^a-z0-9\u3400-\u4dbf\u4e00-\u9fff]+/)) {
+      if (!word) continue
+      if (CJK_TEXT.test(word)) {
+        if (word.length === 1) out.add(word)
+        for (let index = 0; index < word.length - 1; index += 1) out.add(word.slice(index, index + 2))
+      } else if (word.length >= 2) {
+        out.add(word)
+      }
+    }
+    return out
+  }
+
+  /** IDF-weighted relevance ranking; rarer shared tokens weigh more. */
+  function rankByRelevance(pool, query) {
+    const wanted = tokenizeText(query)
+    if (wanted.size === 0) return []
+    const sets = pool.map(entry => tokenizeText(`${entry.text} ${(entry.tags || []).join(' ')}`))
+    const df = new Map()
+    for (const set of sets) for (const token of set) df.set(token, (df.get(token) || 0) + 1)
+    const total = Math.max(1, pool.length)
+    const needle = query.trim().toLowerCase()
+    const scored = []
+    pool.forEach((entry, index) => {
+      let score = 0
+      for (const token of wanted) {
+        if (sets[index].has(token)) score += Math.log(1 + total / (1 + (df.get(token) || 0)))
+      }
+      if (String(entry.text).toLowerCase().includes(needle)) score += 2
+      if (score > 0) scored.push({ entry, score })
+    })
+    scored.sort((a, b) => b.score - a.score || (b.entry.updatedAt || 0) - (a.entry.updatedAt || 0))
+    return scored
+  }
+
   function visibleEntries(cwd, scope) {
     const workspace = normalizeCwd(cwd)
     if (scope === 'global') return state.entries.filter(entry => entry.scope === 'global')
@@ -649,10 +689,7 @@ export function apply(ctx) {
       const rawLimit = Number(args?.limit)
       const limit = Number.isFinite(rawLimit) ? Math.min(20, Math.max(1, Math.floor(rawLimit))) : 8
       const pool = visibleEntries(resolveCwd(exec?.agent), scope)
-      const ranked = pool
-        .map(entry => ({ entry, score: scoreEntry(entry, query) }))
-        .filter(item => item.score > 0)
-        .sort((a, b) => b.score - a.score || (b.entry.updatedAt || 0) - (a.entry.updatedAt || 0))
+      const ranked = rankByRelevance(pool, query)
         .slice(0, limit)
         .map(({ entry, score }) => ({
           id: entry.id,
@@ -776,11 +813,7 @@ export function apply(ctx) {
       const limit = Number.isFinite(rawLimit) ? Math.min(12, Math.max(1, Math.floor(rawLimit))) : 5
       const includeArchived = Boolean(args?.includeArchived)
       const pool = visibleEntries(resolveCwd(exec?.agent), 'auto').filter(entry => includeArchived || !entry.archived)
-      const ranked = pool
-        .map(entry => ({ entry, score: scoreEntry(entry, query) }))
-        .filter(item => item.score > 0)
-        .sort((a, b) => b.score - a.score || (b.entry.updatedAt || 0) - (a.entry.updatedAt || 0))
-        .slice(0, limit)
+      const ranked = rankByRelevance(pool, query).slice(0, limit)
       if (ranked.length === 0) return { query, results: [] }
       const now = Date.now()
       for (const { entry } of ranked) entry.lastUsedAt = now
