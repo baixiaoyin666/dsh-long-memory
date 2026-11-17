@@ -171,11 +171,27 @@ window.__ModuleLoader__.load({
       '用于估算费用：输出 token 单价（元 / 百万 token）': 'Cost estimate: output price (CNY per million tokens)',
       '还没有日记。今天先聊几句，日记会自动写出来；也可以点右上角「重写今天」。': 'No diary yet. Chat today and one is written automatically, or use "Rewrite today".',
       '这周还没生成周报。攒够 2 篇日记后点上面的按钮，会把日记与本周新增记忆归纳成一篇周记。': 'No report this week yet. With two diaries, the button distils the week into one entry.',
+      扫描: 'Scan',
+      忽略: 'Ignore',
+      仍然有效: 'Still valid',
+      还没有扫描过: 'Never scanned',
+      矛盾检测: 'Conflicts',
+      '没有发现互相矛盾的记忆。': 'No contradictions found.',
+      '90 天没有被用到；确认仍然有效，或归档掉。': 'Unused for 90 days — confirm it is still true, or archive it.',
+      '保留 A': 'Keep A',
+      '保留 B': 'Keep B',
       '每轮对话结束后自动提炼的长期事实。全局记忆在所有项目生效，工作区记忆只对对应目录生效；下方可以搜索、过滤和删除。': 'Facts distilled after each turn. Global memories apply everywhere, workspace memories only in their directory; search, filter and delete below.',
     }
 
     /** Dynamic labels: [pattern, replacement]. */
     const EN_PATTERNS = [
+      [/^矛盾检测（(\d+)）$/, 'Conflicts ($1)'],
+      [/^可能过时的记忆（(\d+)）$/, 'Possibly stale ($1)'],
+      [/^上次扫描 (.+)$/, 'Scanned $1 ago'],
+      [/^建议合并：(.+)$/, 'Suggested: $1'],
+      [/^A：(.*)$/, 'A: $1'],
+      [/^B：(.*)$/, 'B: $1'],
+      [/^(\d+) 天$/, '$1 days'],
       [/^(\d+) 条$/, '$1 items'],
       [/^已选 (\d+) 条$/, '$1 selected'],
       [/^(.+) · (\d+) 条$/, '$1 · $2 items'],
@@ -1837,6 +1853,57 @@ window.__ModuleLoader__.load({
         [load],
       )
 
+      const scanConflicts = useCallback(async force => {
+        await fetch(API, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ action: 'scan-conflicts', force: Boolean(force) }),
+        })
+        await load()
+      }, [load])
+
+      const applyConflict = useCallback(
+        async (pair, keep) => {
+          await fetch(API, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              action: 'conflict-apply',
+              a: pair.a,
+              b: pair.b,
+              keep,
+              merged: keep === pair.keep ? pair.merged : '',
+            }),
+          })
+          await load()
+        },
+        [load],
+      )
+
+      const dismissConflict = useCallback(
+        async pair => {
+          await fetch(API, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ action: 'conflict-dismiss', a: pair.a, b: pair.b }),
+          })
+          await load()
+        },
+        [load],
+      )
+
+      const touchMemory = useCallback(
+        async id => {
+          await fetch(API, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ action: 'touch-memory', id }),
+          })
+          await load()
+        },
+        [load],
+      )
+
       const saveSettings = useCallback(
         async patch => {
           await fetch(API, {
@@ -1931,6 +1998,7 @@ window.__ModuleLoader__.load({
       const entries = data && data.entries ? data.entries : []
       const backfill = (data && data.backfill) || { running: false, total: 0, done: 0 }
       const settings = (data && data.settings) || {}
+      const conflicts = (data && data.conflicts) || { scannedAt: 0, pairs: [] }
 
       useEffect(() => {
         if (!backfill.running) return undefined
@@ -2566,6 +2634,187 @@ window.__ModuleLoader__.load({
                             },
                           },
                           '合并',
+                        ),
+                      ),
+                    ),
+                  )
+                : null,
+
+              h(
+                'div',
+                {
+                  className: 'lm-glass lm-fade',
+                  style: glass({ borderRadius: 14, padding: '10px 14px', marginBottom: 12 }),
+                },
+                h(
+                  'div',
+                  { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 } },
+                  h(
+                    'div',
+                    { style: { fontSize: 12, color: C.sub } },
+                    conflicts.pairs.length ? `矛盾检测（${conflicts.pairs.length}）` : '矛盾检测',
+                  ),
+                  h(
+                    'div',
+                    { style: { fontSize: 11, color: C.faint } },
+                    conflicts.scannedAt ? `上次扫描 ${relTime(conflicts.scannedAt)}` : '还没有扫描过',
+                  ),
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      onClick: () => scanConflicts(true),
+                      title: '让模型判断这些相似记忆是否互相矛盾（一次小请求）',
+                      style: {
+                        marginLeft: 'auto',
+                        fontSize: 11,
+                        padding: '2px 10px',
+                        borderRadius: 999,
+                        border: `1px solid ${C.brand}`,
+                        color: C.brand,
+                        background: 'transparent',
+                        cursor: 'pointer',
+                      },
+                    },
+                    '扫描',
+                  ),
+                ),
+                conflicts.pairs.length
+                  ? conflicts.pairs.map(pair =>
+                      h(
+                        'div',
+                        {
+                          key: `${pair.a}-${pair.b}`,
+                          style: { borderTop: `1px solid ${C.line}`, padding: '8px 0' },
+                        },
+                        h('div', { style: { fontSize: 11, color: C.ink, lineHeight: '18px' } }, `A：${pair.aText}`),
+                        h(
+                          'div',
+                          { style: { fontSize: 11, color: C.ink, lineHeight: '18px', marginTop: 2 } },
+                          `B：${pair.bText}`,
+                        ),
+                        pair.merged
+                          ? h(
+                              'div',
+                              { style: { fontSize: 11, color: C.brand, marginTop: 4 } },
+                              `建议合并：${pair.merged}`,
+                            )
+                          : null,
+                        h(
+                          'div',
+                          { style: { display: 'flex', gap: 8, marginTop: 6 } },
+                          ...[
+                            ['保留 A', () => applyConflict(pair, 'a')],
+                            ['保留 B', () => applyConflict(pair, 'b')],
+                            ['忽略', () => dismissConflict(pair)],
+                          ].map(([label, handler]) =>
+                            h(
+                              'button',
+                              {
+                                key: label,
+                                type: 'button',
+                                onClick: handler,
+                                style: {
+                                  fontSize: 11,
+                                  padding: '2px 9px',
+                                  borderRadius: 999,
+                                  border: `1px solid ${label === '忽略' ? C.line : C.brand}`,
+                                  color: label === '忽略' ? C.faint : C.brand,
+                                  background: 'transparent',
+                                  cursor: 'pointer',
+                                },
+                              },
+                              label,
+                            ),
+                          ),
+                        ),
+                      ),
+                    )
+                  : h('div', { style: { fontSize: 11, color: C.faint } }, '没有发现互相矛盾的记忆。'),
+              ),
+
+              analysis.stale && analysis.stale.length
+                ? h(
+                    'div',
+                    {
+                      className: 'lm-glass lm-fade',
+                      style: glass({ borderRadius: 14, padding: '10px 14px', marginBottom: 12 }),
+                    },
+                    h(
+                      'div',
+                      { style: { fontSize: 12, color: C.sub, marginBottom: 4 } },
+                      `可能过时的记忆（${analysis.stale.length}）`,
+                    ),
+                    h(
+                      'div',
+                      { style: { fontSize: 11, color: C.faint, marginBottom: 6 } },
+                      '90 天没有被用到；确认仍然有效，或归档掉。',
+                    ),
+                    analysis.stale.map(item =>
+                      h(
+                        'div',
+                        {
+                          key: item.id,
+                          style: { display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0' },
+                        },
+                        h(
+                          'div',
+                          {
+                            style: {
+                              flex: 1,
+                              minWidth: 0,
+                              fontSize: 11,
+                              color: C.sub,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            },
+                          },
+                          item.text,
+                        ),
+                        h('div', { style: { flex: 'none', fontSize: 10, color: C.faint } }, `${item.days} 天`),
+                        h(
+                          'button',
+                          {
+                            type: 'button',
+                            onClick: () => touchMemory(item.id),
+                            style: {
+                              flex: 'none',
+                              fontSize: 11,
+                              padding: '1px 8px',
+                              borderRadius: 999,
+                              border: `1px solid ${C.ok}`,
+                              color: C.ok,
+                              background: 'transparent',
+                              cursor: 'pointer',
+                            },
+                          },
+                          '仍然有效',
+                        ),
+                        h(
+                          'button',
+                          {
+                            type: 'button',
+                            onClick: async () => {
+                              await fetch(API, {
+                                method: 'POST',
+                                headers: { 'content-type': 'application/json' },
+                                body: JSON.stringify({ action: 'archive-memories', ids: [item.id], archived: true }),
+                              })
+                              await load()
+                            },
+                            style: {
+                              flex: 'none',
+                              fontSize: 11,
+                              padding: '1px 8px',
+                              borderRadius: 999,
+                              border: `1px solid ${C.line}`,
+                              color: C.faint,
+                              background: 'transparent',
+                              cursor: 'pointer',
+                            },
+                          },
+                          '归档',
                         ),
                       ),
                     ),

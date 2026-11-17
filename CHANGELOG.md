@@ -8,6 +8,48 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ---
 
+## [0.26.0] — 2026-11-17
+
+### 新增
+
+- **矛盾检测**：面板可发起一次模型扫描，把「相似但可能互相矛盾」的记忆成对列出（如「用 pnpm」vs「用 npm」），每条给出 A / B、建议合并文案和保留建议；
+  - 「保留 A / 保留 B」会把另一条归档、保留的那条权重 +0.5 并刷新最近使用时间；
+  - 「忽略」把这一对加入忽略名单，之后不再打扰；
+  - 扫描结果缓存 6 小时，避免重复花 token。
+- **可能过时的记忆**：90 天没有被用到的记忆单独列出，可直接「仍然有效」（刷新 lastUsedAt）或「归档」。
+
+### 实现
+
+- 新增 `conflicts.json` 保存扫描结果与忽略名单；
+- 候选对先用本地相似度（0.45–0.9）筛出，只有这些才进入模型比较，一次调用覆盖全部候选。
+
+### 版本
+
+- `0.25.0` → `0.26.0`。
+
+---
+
+## [0.26.0] — 2026-11-17
+
+### Added
+
+- **Conflict detection**: the panel can run one model scan that lists similar memories which may actually disagree (e.g. "use pnpm" vs "use npm"), with A / B text, a suggested merged wording and which one to keep.
+  - "Keep A / Keep B" archives the other row, bumps the kept row's weight by 0.5 and refreshes its last-used time;
+  - "Ignore" remembers the pair so it is not raised again;
+  - results are cached for six hours to avoid paying for the same scan twice.
+- **Possibly stale memories**: rows unused for 90 days are listed with "Still valid" (refreshes `lastUsedAt`) and "Archive" actions.
+
+### Implementation
+
+- New `conflicts.json` stores scan results and the ignore list;
+- candidates are filtered locally by similarity (0.45–0.9) first, so one model call covers every candidate.
+
+### Version
+
+- `0.25.0` → `0.26.0`.
+
+---
+
 ## [0.25.0] — 2026-11-14
 
 ### 新增

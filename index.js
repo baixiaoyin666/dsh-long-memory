@@ -892,6 +892,148 @@ export function apply(ctx) {
     return archived
   }
 
+  // ---- conflict detection: near-duplicates that may actually disagree ----
+
+  const conflictsFile = path.join(dataDir, 'conflicts.json')
+  const conflicts = { scannedAt: 0, pairs: [], dismissed: [] }
+  let conflictBusy = false
+
+  async function loadConflicts() {
+    try {
+      const parsed = JSON.parse(await readFile(conflictsFile, 'utf8'))
+      if (parsed && typeof parsed === 'object') {
+        conflicts.scannedAt = Number(parsed.scannedAt) || 0
+        conflicts.pairs = Array.isArray(parsed.pairs) ? parsed.pairs : []
+        conflicts.dismissed = Array.isArray(parsed.dismissed) ? parsed.dismissed.slice(0, 100) : []
+      }
+    } catch (error) {
+      if (error?.code !== 'ENOENT') warn('[long-memory] failed to load conflicts:', error)
+    }
+  }
+
+  function persistConflicts() {
+    const snapshot = JSON.stringify(conflicts)
+    writeChain = writeChain
+      .then(async () => {
+        await mkdir(dataDir, { recursive: true })
+        const tmp = `${conflictsFile}.tmp`
+        await writeFile(tmp, snapshot, 'utf8')
+        await rename(tmp, conflictsFile)
+      })
+      .catch(error => warn('[long-memory] failed to persist conflicts:', error))
+    return writeChain
+  }
+
+  /** Candidate pairs for an LLM check: similar enough to be about one topic. */
+  function conflictCandidates() {
+    const entries = state.entries.filter(entry => !entry.archived)
+    const sets = entries.map(entry => tokenSet(entry.text))
+    const pairs = []
+    for (let i = 0; i < entries.length && pairs.length < 10; i += 1) {
+      for (let j = i + 1; j < entries.length && pairs.length < 10; j += 1) {
+        if (entries[i].scope !== entries[j].scope) continue
+        if (entries[i].scope === 'workspace' && entries[i].workspace !== entries[j].workspace) continue
+        const left = sets[i]
+        const right = sets[j]
+        if (left.size === 0 || right.size === 0) continue
+        let shared = 0
+        for (const token of left) if (right.has(token)) shared += 1
+        const score = Math.max(shared / (left.size + right.size - shared), shared / Math.min(left.size, right.size))
+        if (score >= 0.45 && score < 0.9) pairs.push({ a: entries[i], b: entries[j], score })
+      }
+    }
+    return pairs
+  }
+
+  function parseConflicts(raw, count) {
+    const verdicts = []
+    const text = String(raw || '')
+      .replace(/```json/gi, '')
+      .replace(/```/g, '')
+      .trim()
+    const start = text.indexOf('[')
+    const end = text.lastIndexOf(']')
+    let list = []
+    if (start >= 0 && end > start) {
+      try {
+        list = JSON.parse(text.slice(start, end + 1))
+      } catch {
+        list = []
+      }
+    }
+    for (const item of Array.isArray(list) ? list : []) {
+      const index = Number(item?.pair) - 1
+      if (!Number.isInteger(index) || index < 0 || index >= count) continue
+      const verdict = item?.conflict === true || item?.conflict === 'true'
+      verdicts[index] = {
+        conflict: verdict,
+        keep: item?.keep === 'b' ? 'b' : 'a',
+        merged: cleanText(String(item?.merged || ''), 200),
+      }
+    }
+    return verdicts
+  }
+
+  async function scanConflicts(force) {
+    if (conflictBusy) return { ok: false, reason: '正在扫描' }
+    const fresh = conflicts.scannedAt && Date.now() - conflicts.scannedAt < 6 * 3600 * 1000
+    if (!force && fresh) return { ok: true, cached: true }
+    const candidates = conflictCandidates().filter(
+      pair => !conflicts.dismissed.includes(`${pair.a.id}:${pair.b.id}`),
+    )
+    if (candidates.length === 0) {
+      conflicts.pairs = []
+      conflicts.scannedAt = Date.now()
+      await persistConflicts()
+      return { ok: true, pairs: [] }
+    }
+    const route = diaryRoute()
+    if (!route) return { ok: false, reason: '没有可用的模型路由' }
+    conflictBusy = true
+    try {
+      const listing = candidates
+        .map((pair, index) => `${index + 1}.\nA: ${pair.a.text}\nB: ${pair.b.text}`)
+        .join('\n\n')
+      const prompt = [
+        '你是一个记忆库编辑器。下面是从长期记忆里挑出的若干组句子，每组两条（A、B）。',
+        '判断每组是否真的互相矛盾或互斥（例如一个说用 pnpm，另一个说用 npm；一个说端口 3000，另一个说 8080）。',
+        '只是相关、互补、或描述不同方面的，不算矛盾。',
+        '只输出 JSON 数组，不要解释。每个元素：',
+        '{"pair": 编号, "conflict": true|false, "keep": "a"|"b", "merged": "把两条合成一句的表述"}',
+        '若有矛盾，keep 选更可信/更新的一条，merged 给出合并后的最终表述；没有矛盾时 keep 随意、merged 留空。',
+        '',
+        listing,
+      ].join('\n')
+      const raw = await complete(prompt, route, {
+        maxTokens: 1600,
+        temperature: 0.1,
+        onUsage: usage => recordUsage(usage.inputTokens, usage.outputTokens),
+      })
+      const verdicts = parseConflicts(raw, candidates.length)
+      const pairs = candidates.map((pair, index) => {
+        const verdict = verdicts[index] || { conflict: false, keep: 'a', merged: '' }
+        return {
+          a: pair.a.id,
+          b: pair.b.id,
+          aText: pair.a.text,
+          bText: pair.b.text,
+          score: Number(pair.score.toFixed(2)),
+          conflict: verdict.conflict,
+          keep: verdict.keep,
+          merged: verdict.merged,
+        }
+      })
+      conflicts.pairs = pairs.filter(pair => pair.conflict)
+      conflicts.scannedAt = Date.now()
+      await persistConflicts()
+      return { ok: true, pairs: conflicts.pairs }
+    } catch (error) {
+      return { ok: false, reason: String(error?.message || error) }
+    } finally {
+      conflictBusy = false
+    }
+  }
+
   function similarPairs() {
     const entries = state.entries
     const sets = entries.map(entry => tokenSet(entry.text))
@@ -954,6 +1096,14 @@ export function apply(ctx) {
         .map(([tag, count]) => ({ tag, count })),
       duplicates: duplicateGroups(),
       archived: entries.filter(entry => entry.archived).length,
+      stale: entries
+        .filter(entry => !entry.archived && now - (entry.lastUsedAt || entry.updatedAt || 0) > 90 * 86400000)
+        .slice(0, 10)
+        .map(entry => ({
+          id: entry.id,
+          text: entry.text,
+          days: Math.floor((now - (entry.lastUsedAt || entry.updatedAt || 0)) / 86400000),
+        })),
       pairs: similarPairs(),
     }
   }
@@ -1006,6 +1156,10 @@ export function apply(ctx) {
           text: item.entry.text,
           deletedAt: item.deletedAt || 0,
         })),
+      },
+      conflicts: {
+        scannedAt: conflicts.scannedAt,
+        pairs: conflicts.pairs,
       },
       personas: {
         activeId: personas.activeId,
@@ -1969,6 +2123,7 @@ export function apply(ctx) {
   const apiHandler = async (req, res) => {
     let diaryResult
     let weeklyResult
+    let conflictResult
     let personaResult
     let settingsResult
     try {
@@ -2041,6 +2196,51 @@ export function apply(ctx) {
           trash.length = 0
           await persistTrash()
           settingsResult = { ok: true }
+        } else if (body?.action === 'scan-conflicts') {
+          conflictResult = await scanConflicts(Boolean(body.force))
+        } else if (body?.action === 'conflict-apply') {
+          const a = String(body.a || '')
+          const b = String(body.b || '')
+          const keep = body.keep === 'b' ? 'b' : 'a'
+          const keepId = keep === 'a' ? a : b
+          const otherId = keep === 'a' ? b : a
+          const keeper = state.entries.find(entry => entry.id === keepId)
+          const other = state.entries.find(entry => entry.id === otherId)
+          if (!keeper) {
+            settingsResult = { ok: false, reason: '保留的那条已不存在' }
+          } else {
+            if (other) {
+              other.archived = true
+              other.lastUsedAt = Date.now()
+            }
+            keeper.lastUsedAt = Date.now()
+            keeper.weight = Math.min(5, Number(keeper.weight || 1) + 0.5)
+            if (body.merged) keeper.text = cleanText(String(body.merged), 300)
+            conflicts.pairs = conflicts.pairs.filter(pair => !(pair.a === a && pair.b === b))
+            await persist()
+            await persistConflicts()
+            settingsResult = { ok: true }
+          }
+        } else if (body?.action === 'conflict-dismiss') {
+          const a = String(body.a || '')
+          const b = String(body.b || '')
+          const key = `${a}:${b}`
+          if (!conflicts.dismissed.includes(key)) conflicts.dismissed.push(key)
+          if (conflicts.dismissed.length > 100) {
+            conflicts.dismissed.splice(0, conflicts.dismissed.length - 100)
+          }
+          conflicts.pairs = conflicts.pairs.filter(pair => !(pair.a === a && pair.b === b))
+          await persistConflicts()
+          settingsResult = { ok: true }
+        } else if (body?.action === 'touch-memory') {
+          const entry = state.entries.find(item => item.id === String(body.id || ''))
+          if (entry) {
+            entry.lastUsedAt = Date.now()
+            await persist()
+            settingsResult = { ok: true }
+          } else {
+            settingsResult = { ok: false, reason: '没有这条记忆' }
+          }
         } else if (body?.action === 'settings-save') {
           const input = body.settings || {}
           if (typeof input.auto === 'boolean') settings.auto = input.auto
@@ -2238,6 +2438,7 @@ export function apply(ctx) {
       const payloadObject = await panelPayload()
       if (diaryResult) payloadObject.diaryResult = diaryResult
       if (weeklyResult) payloadObject.weeklyResult = weeklyResult
+      if (conflictResult) payloadObject.conflictResult = conflictResult
       if (personaResult) payloadObject.personaResult = personaResult
       if (settingsResult) payloadObject.settingsResult = settingsResult
       const payload = JSON.stringify(payloadObject)
@@ -2304,4 +2505,5 @@ export function apply(ctx) {
   loadTrash().catch(error => warn('[long-memory] trash load crashed:', error))
   loadReports().catch(error => warn('[long-memory] reports load crashed:', error))
   loadUsage().catch(error => warn('[long-memory] usage load crashed:', error))
+  loadConflicts().catch(error => warn('[long-memory] conflicts load crashed:', error))
 }
