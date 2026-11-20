@@ -180,6 +180,7 @@ window.__ModuleLoader__.load({
       '90 天没有被用到；确认仍然有效，或归档掉。': 'Unused for 90 days — confirm it is still true, or archive it.',
       '保留 A': 'Keep A',
       '保留 B': 'Keep B',
+      '全部新增': 'Added (all time)',
       '每轮对话结束后自动提炼的长期事实。全局记忆在所有项目生效，工作区记忆只对对应目录生效；下方可以搜索、过滤和删除。': 'Facts distilled after each turn. Global memories apply everywhere, workspace memories only in their directory; search, filter and delete below.',
     }
 
@@ -189,6 +190,14 @@ window.__ModuleLoader__.load({
       [/^可能过时的记忆（(\d+)）$/, 'Possibly stale ($1)'],
       [/^上次扫描 (.+)$/, 'Scanned $1 ago'],
       [/^建议合并：(.+)$/, 'Suggested: $1'],
+      [/^创建 (.+)$/, 'Created $1'],
+      [/^更新 (.+)$/, 'Updated $1'],
+      [/^最近使用 (.+)$/, 'Last used $1'],
+      [/^生成于 (.+)$/, 'Generated $1'],
+      [/^(\d+) 分钟前$/, '$1m ago'],
+      [/^(\d+) 小时前$/, '$1h ago'],
+      [/^(\d+) 天前$/, '$1d ago'],
+      [/^(\d+) 个月前$/, '$1mo ago'],
       [/^A：(.*)$/, 'A: $1'],
       [/^B：(.*)$/, 'B: $1'],
       [/^(\d+) 天$/, '$1 days'],
@@ -425,14 +434,16 @@ window.__ModuleLoader__.load({
     function relTime(ts) {
       if (!ts) return '—'
       const diff = Date.now() - ts
-      if (diff < 60000) return '刚刚'
+      const zh = isZh()
+      if (diff < 60000) return zh ? '刚刚' : 'just now'
       const minutes = Math.floor(diff / 60000)
-      if (minutes < 60) return `${minutes} 分钟前`
+      if (minutes < 60) return zh ? `${minutes} 分钟前` : `${minutes}m ago`
       const hours = Math.floor(minutes / 60)
-      if (hours < 24) return `${hours} 小时前`
+      if (hours < 24) return zh ? `${hours} 小时前` : `${hours}h ago`
       const days = Math.floor(hours / 24)
-      if (days < 30) return `${days} 天前`
-      return `${Math.floor(days / 30)} 个月前`
+      if (days < 30) return zh ? `${days} 天前` : `${days}d ago`
+      const months = Math.floor(days / 30)
+      return zh ? `${months} 个月前` : `${months}mo ago`
     }
 
     function shortSession(id) {
@@ -519,6 +530,19 @@ window.__ModuleLoader__.load({
       .lm-legend { transition: background .16s ease }
       .lm-legend:hover { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 12%, transparent) }
       .lm-live-dot { width: 6px; height: 6px; border-radius: 999px; background: #3fb950; margin-left: auto; flex: none }
+      .lm-actions { opacity: 0; transition: opacity .16s ease }
+      .lm-row:hover .lm-actions, .lm-row:focus-within .lm-actions { opacity: 1 }
+      @keyframes lm-spin { to { transform: rotate(360deg) } }
+      .lm-spin { display: inline-block; animation: lm-spin .9s linear infinite }
+      .lm-refreshing { position: relative }
+      .lm-refreshing::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,.10), transparent);
+        animation: lm-shimmer 1.4s ease-in-out infinite;
+      }
       @media (max-width: 760px) {
         .lm-dash { grid-template-columns: repeat(2, minmax(0, 1fr)) }
         .lm-dash > * { grid-column: span 2 !important }
@@ -1108,6 +1132,8 @@ window.__ModuleLoader__.load({
 
     /** Compact metric tile used by the dashboard rows. */
     function Tile(props) {
+      const numeric = typeof props.value === 'number' && Number.isFinite(props.value)
+      const counted = useCountUp(numeric ? props.value : 0)
       return h(
         'div',
         {
@@ -1126,7 +1152,7 @@ window.__ModuleLoader__.load({
         h(
           'div',
           { style: { fontSize: 22, fontWeight: 600, lineHeight: 1.15, color: props.color || C.ink } },
-          String(props.value),
+          numeric ? String(counted) : String(props.value),
         ),
         props.sub ? h('div', { style: { fontSize: 11, color: C.faint, marginTop: 4 } }, props.sub) : null,
       )
@@ -1295,7 +1321,7 @@ window.__ModuleLoader__.load({
       const maxBar = stats.days.reduce((top, day) => Math.max(top, day.count), 1)
       const heatMax = stats.heat.reduce((top, day) => Math.max(top, day.count), 1)
       const healthColor = analysis.health >= 80 ? C.ok : analysis.health >= 50 ? C.warn : C.err
-      const rangeLabel = range === 0 ? '全部' : `${range} 天`
+      const addedLabel = range === 0 ? '全部新增' : `近 ${range} 天新增`
 
       const usage = props.usage || { days: [], total: { input: 0, output: 0, cost: 0, calls: 0 } }
       const uDays = Array.isArray(usage.days) ? usage.days : []
@@ -1343,7 +1369,7 @@ window.__ModuleLoader__.load({
         panel(
           'lm-span-8',
           [
-            headText(`近 ${rangeLabel}新增`),
+            headText(addedLabel),
             headMeta(`${stats.inRange} 条`),
             h(
               'div',
@@ -1578,6 +1604,7 @@ window.__ModuleLoader__.load({
                   stroke: C.brand,
                   strokeWidth: 2,
                   strokeLinejoin: 'round',
+                  vectorEffect: 'non-scaling-stroke',
                 }),
                 h('polyline', {
                   points: line(day => pyTok(day.output)),
@@ -1585,19 +1612,38 @@ window.__ModuleLoader__.load({
                   stroke: '#b08cff',
                   strokeWidth: 2,
                   strokeLinejoin: 'round',
-                }),
-                h('polyline', {
-                  points: line(day => pyCost(day.cost)),
-                  fill: 'none',
-                  stroke: '#ff8ac2',
-                  strokeWidth: 1.5,
-                  strokeDasharray: '3 3',
+                  vectorEffect: 'non-scaling-stroke',
                 }),
               ),
               h(
                 'div',
                 { style: { display: 'flex', justifyContent: 'space-between', fontSize: 9, color: C.faint } },
                 uDays.map(day => h('span', { key: day.date }, day.label)),
+              ),
+              h(
+                'div',
+                { style: { marginTop: 4 } },
+                h(
+                  'div',
+                  { style: { fontSize: 10, color: C.faint, marginBottom: 2 } },
+                  `费用（峰值 ¥${maxCost.toFixed(3)}）`,
+                ),
+                h(
+                  'svg',
+                  {
+                    viewBox: '0 0 300 22',
+                    preserveAspectRatio: 'none',
+                    style: { width: '100%', height: 22, display: 'block' },
+                  },
+                  h('polyline', {
+                    points: line(day => 20 - (day.cost / maxCost) * 18),
+                    fill: 'none',
+                    stroke: '#ff8ac2',
+                    strokeWidth: 1.5,
+                    strokeLinejoin: 'round',
+                    vectorEffect: 'non-scaling-stroke',
+                  }),
+                ),
               ),
             ),
             h(
@@ -1765,6 +1811,7 @@ window.__ModuleLoader__.load({
       const [everyTurnsDraft, setEveryTurnsDraft] = useState('')
       const [templateOpen, setTemplateOpen] = useState(false)
       const [detailId, setDetailId] = useState('')
+      const [toast, setToast] = useState('')
 
       useEffect(() => {
         load()
@@ -1780,6 +1827,8 @@ window.__ModuleLoader__.load({
               body: JSON.stringify({ action: 'forget', id }),
             })
             await load()
+            setToast(isZh() ? '已删除 1 条记忆，可在回收站恢复' : 'Memory deleted — restorable from the recycle bin')
+            window.setTimeout(() => setToast(''), 2400)
           } finally {
             setBusyId(null)
           }
@@ -2170,7 +2219,9 @@ window.__ModuleLoader__.load({
                 opacity: busy ? 0.6 : 1,
               },
             },
-            state.status === 'refreshing' ? '刷新中…' : '刷新',
+            state.status === 'refreshing'
+              ? h('span', null, h('span', { className: 'lm-spin' }, '⟳'), ' 刷新中…')
+              : '刷新',
           ),
         ),
 
@@ -2194,6 +2245,30 @@ window.__ModuleLoader__.load({
               null,
 
               state.status === 'error' ? h(ErrorBox, { error: state.error, onRetry: load }) : null,
+
+              toast
+                ? h(
+                    'div',
+                    {
+                      className: 'lm-fade',
+                      role: 'status',
+                      style: {
+                        position: 'sticky',
+                        top: 0,
+                        zIndex: 3,
+                        marginBottom: 8,
+                        padding: '6px 12px',
+                        borderRadius: 999,
+                        border: `1px solid ${C.line}`,
+                        background: C.soft,
+                        color: C.ink,
+                        fontSize: 12,
+                        width: 'fit-content',
+                      },
+                    },
+                    toast,
+                  )
+                : null,
 
               h(
                 Safe,
@@ -3038,7 +3113,7 @@ window.__ModuleLoader__.load({
               h(
                 'div',
                 {
-                  className: 'lm-fade',
+                  className: busy ? 'lm-fade lm-refreshing' : 'lm-fade',
                   style: {
                     display: 'grid',
                     gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
@@ -3285,6 +3360,7 @@ window.__ModuleLoader__.load({
                               'button',
                               {
                                 type: 'button',
+                                className: 'lm-actions',
                                 onClick: () => setOpenId(open ? null : entry.id),
                                 style: {
                                   marginTop: 6,
@@ -3302,6 +3378,7 @@ window.__ModuleLoader__.load({
                               'button',
                               {
                                 type: 'button',
+                                className: 'lm-actions',
                                 onClick: () => startEdit(entry),
                                 style: {
                                   marginTop: 6,
@@ -3320,6 +3397,7 @@ window.__ModuleLoader__.load({
                               'button',
                               {
                                 type: 'button',
+                                className: 'lm-actions',
                                 onClick: () => setDetailId(entry.id),
                                 style: {
                                   marginTop: 6,
@@ -3334,6 +3412,26 @@ window.__ModuleLoader__.load({
                               },
                               '打开独立页 ›',
                             ),
+                            h(
+                              'button',
+                              {
+                                type: 'button',
+                                className: 'lm-actions',
+                                title: '删除这条记忆',
+                                onClick: () => forget(entry.id),
+                                style: {
+                                  marginTop: 6,
+                                  marginLeft: 10,
+                                  padding: 0,
+                                  fontSize: 11,
+                                  color: C.err,
+                                  background: 'transparent',
+                                  border: 'none',
+                                  cursor: 'pointer',
+                                },
+                              },
+                              '✕',
+                            ),
                             open
                               ? h(
                                   'div',
@@ -3347,7 +3445,9 @@ window.__ModuleLoader__.load({
                                   h(
                                     'div',
                                     { style: { fontSize: 11, color: C.faint, marginBottom: 6, lineHeight: '18px' } },
-                                    `创建 ${relTime(entry.createdAt)} · 更新 ${relTime(entry.updatedAt)} · 命中 ${entry.hits || 0} 次 · 来源 ${entry.source || 'auto'}`,
+                                    isZh()
+                                      ? `创建 ${relTime(entry.createdAt)} · 更新 ${relTime(entry.updatedAt)} · 命中 ${entry.hits || 0} 次 · 来源 ${entry.source || 'auto'}`
+                                      : `Created ${relTime(entry.createdAt)} · Updated ${relTime(entry.updatedAt)} · ${entry.hits || 0} hits · source ${entry.source || 'auto'}`,
                                   ),
                                   entry.workspace
                                     ? h(

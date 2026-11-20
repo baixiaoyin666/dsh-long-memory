@@ -8,6 +8,52 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ---
 
+## [0.27.0] — 2026-11-20
+
+### 修复
+
+- **相对时间双语化**：`relTime()` 按语言返回「3 天前 / 3d ago」，不再只输出中文。
+- **补翻译遗漏**：`创建 3 天前`、`更新 …`、`最近使用 …`、`生成于 …` 等拼接串现在会被词典规则整句翻译。
+- **指标卡数字滚动**：`Tile` 接入 `useCountUp`，数字从 0 滚到目标值（非数字如 emoji 保持原样）。
+- **折线描边不再拉伸**：所有 SVG 折线加 `vector-effect: non-scaling-stroke`，`preserveAspectRatio: none` 下描边仍保持 1.5–2px。
+- **费用单独小图**：Token 折线只画输入/输出，费用改为下方独立 sparkline 并标注峰值金额，避免双刻度混读。
+- **「全部」时间范围文案**：range 为 0 时显示「全部新增」，不再是「近 全部新增」。
+
+### 新增
+
+- **悬浮操作**：记忆卡片上的「查看对话 / 编辑 / 打开独立页」默认淡出，悬浮时显现，并新增删除图标。
+- **删除 Toast**：删除后出现轻提示「已删除 1 条记忆，可在回收站恢复」，2.4 秒自动消失。
+- **刷新反馈**：刷新时图标旋转，列表区域出现 shimmer 扫光。
+
+### 版本
+
+- `0.26.0` → `0.27.0`。
+
+---
+
+## [0.27.0] — 2026-11-20
+
+### Fixed
+
+- **Bilingual relative time**: `relTime()` now returns "3d ago" in English and "3 天前" in Chinese.
+- **Translation gaps**: composite strings like "创建 3 天前", "更新 …", "最近使用 …", "生成于 …" are now matched by whole-sentence rules.
+- **Count-up tiles**: `Tile` uses `useCountUp`, animating numbers from 0 (non-numeric values such as emoji stay as-is).
+- **No more stretched strokes**: every SVG polyline gets `vector-effect: non-scaling-stroke`, so 1.5–2px strokes stay consistent under `preserveAspectRatio: none`.
+- **Separate cost sparkline**: the token chart only draws input/output; cost moved to its own mini chart with a peak-cost label, avoiding a misleading dual axis.
+- **"All" range label**: with range 0 the header reads "全部新增" (added, all time) instead of a broken "近 全部新增".
+
+### Added
+
+- **Hover actions**: "查看对话 / 编辑 / 打开独立页" fade in on hover with a new delete icon.
+- **Delete toast**: a light "已删除 1 条记忆，可在回收站恢复" notice for 2.4s.
+- **Refresh feedback**: the icon spins and the list gets a shimmer sweep while refreshing.
+
+### Version
+
+- `0.26.0` → `0.27.0`.
+
+---
+
 ## [0.26.0] — 2026-11-17
 
 ### 新增
